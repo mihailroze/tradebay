@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 
 type Game = {
   id: string;
@@ -30,7 +30,23 @@ export default function AdminPanel() {
   const [tagName, setTagName] = useState("");
   const [tagGameId, setTagGameId] = useState("");
 
-  const initData = useMemo(() => getInitData(), []);
+  const [initData, setInitData] = useState("");
+
+  useEffect(() => {
+    let attempts = 0;
+    const read = () => {
+      const value = getInitData();
+      if (value) {
+        setInitData(value);
+        return;
+      }
+      if (attempts < 5) {
+        attempts += 1;
+        setTimeout(read, 300);
+      }
+    };
+    read();
+  }, []);
 
   const loadCatalog = () => {
     fetch("/api/catalog")
