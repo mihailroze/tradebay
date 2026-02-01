@@ -11,6 +11,17 @@ type Game = {
 };
 
 type CatalogResponse = { games: Game[] };
+type AuthInfo = {
+  ok: boolean;
+  error?: string;
+  user?: {
+    id: number;
+    username: string | null;
+    firstName: string | null;
+    lastName: string | null;
+  };
+  isAdmin?: boolean;
+};
 
 function getInitData(): string {
   if (typeof window === "undefined") return "";
@@ -21,6 +32,7 @@ function getInitData(): string {
 export default function AdminPanel() {
   const [catalog, setCatalog] = useState<Game[]>([]);
   const [status, setStatus] = useState("");
+  const [authInfo, setAuthInfo] = useState<AuthInfo | null>(null);
   const [gameName, setGameName] = useState("");
   const [serverName, setServerName] = useState("");
   const [serverGameId, setServerGameId] = useState("");
@@ -36,6 +48,8 @@ export default function AdminPanel() {
     let attempts = 0;
     const read = () => {
       const value = getInitData();
+      const tg = (window as unknown as { Telegram?: { WebApp?: { ready?: () => void } } }).Telegram;
+      tg?.WebApp?.ready?.();
       if (value) {
         setInitData(value);
         return;
@@ -58,6 +72,18 @@ export default function AdminPanel() {
   useEffect(() => {
     loadCatalog();
   }, []);
+
+  useEffect(() => {
+    if (!initData) return;
+    fetch("/api/auth/me", {
+      headers: {
+        "x-telegram-init-data": initData,
+      },
+    })
+      .then((res) => res.json())
+      .then((data: AuthInfo) => setAuthInfo(data))
+      .catch(() => setAuthInfo({ ok: false, error: "Failed to load auth info" }));
+  }, [initData]);
 
   const createEntity = async (url: string, payload: Record<string, unknown>) => {
     setStatus("Сохраняем...");
@@ -90,6 +116,13 @@ export default function AdminPanel() {
           <h1 className="text-3xl font-semibold tracking-tight">Каталог и теги</h1>
           {!initData ? (
             <p className="text-sm text-amber-400">Откройте страницу из Telegram Web App для прав админа.</p>
+          ) : null}
+          {authInfo?.ok ? (
+            <p className="text-xs text-neutral-400">
+              TG ID: {authInfo.user?.id} · Admin: {authInfo.isAdmin ? "yes" : "no"}
+            </p>
+          ) : authInfo?.error ? (
+            <p className="text-xs text-amber-400">Auth: {authInfo.error}</p>
           ) : null}
           <p className="text-xs text-neutral-500">{status}</p>
         </header>
