@@ -25,8 +25,31 @@ type AuthInfo = {
 
 function getInitData(): string {
   if (typeof window === "undefined") return "";
-  const tg = (window as unknown as { Telegram?: { WebApp?: { initData?: string } } }).Telegram;
-  return tg?.WebApp?.initData || "";
+  const tg = (window as unknown as { Telegram?: { WebApp?: { initData?: string; ready?: () => void } } }).Telegram;
+  tg?.WebApp?.ready?.();
+  const fromTelegram = tg?.WebApp?.initData || "";
+  const fromUrl = readInitDataFromUrl();
+  const cached = window.sessionStorage.getItem("tg_init_data") || "";
+  const value = fromTelegram || fromUrl || cached;
+  if (value) {
+    window.sessionStorage.setItem("tg_init_data", value);
+  }
+  return value;
+}
+
+function readInitDataFromUrl(): string {
+  try {
+    const params = new URLSearchParams(window.location.search);
+    const raw = params.get("tgWebAppData") || params.get("initData") || "";
+    if (!raw) return "";
+    try {
+      return decodeURIComponent(raw);
+    } catch {
+      return raw;
+    }
+  } catch {
+    return "";
+  }
 }
 
 export default function AdminPanel() {
