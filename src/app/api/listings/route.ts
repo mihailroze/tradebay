@@ -68,7 +68,7 @@ export async function GET(req: Request) {
 }
 
 export async function POST(req: Request) {
-  const initData = getTelegramInitDataFromHeaders();
+  const initData = await getTelegramInitDataFromHeaders();
   const tgUser = getTelegramUserFromInitData(initData);
   if (!tgUser) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

@@ -8,7 +8,7 @@ const schema = z.object({
 });
 
 export async function PATCH(req: Request, context: { params: Promise<{ id: string }> }) {
-  const initData = getTelegramInitDataFromHeaders();
+  const initData = await getTelegramInitDataFromHeaders();
   const tgUser = getTelegramUserFromInitData(initData);
   if (!tgUser) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

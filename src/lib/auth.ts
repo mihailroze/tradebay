@@ -6,8 +6,8 @@ const ADMIN_IDS = (process.env.TELEGRAM_ADMIN_IDS || "")
   .map((id) => id.trim())
   .filter(Boolean);
 
-export function getTelegramInitDataFromHeaders() {
-  const hdrs = headers();
+export async function getTelegramInitDataFromHeaders() {
+  const hdrs = await headers();
   return hdrs.get("x-telegram-init-data") ?? "";
 }
 

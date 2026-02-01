@@ -22,7 +22,7 @@ export async function GET(req: Request) {
 }
 
 export async function POST(req: Request) {
-  const initData = getTelegramInitDataFromHeaders();
+  const initData = await getTelegramInitDataFromHeaders();
   const tgUser = getTelegramUserFromInitData(initData);
   if (!tgUser || !isAdminTelegramId(tgUser.id)) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });

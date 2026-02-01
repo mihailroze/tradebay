@@ -3,7 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { getTelegramInitDataFromHeaders, getTelegramUserFromInitData } from "@/lib/auth";
 
 export async function POST() {
-  const initData = getTelegramInitDataFromHeaders();
+  const initData = await getTelegramInitDataFromHeaders();
   const tgUser = getTelegramUserFromInitData(initData);
 
   if (!tgUser) {
