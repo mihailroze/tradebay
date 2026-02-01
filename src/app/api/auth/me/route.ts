@@ -8,7 +8,7 @@ export async function GET() {
     return NextResponse.json({ ok: false, error: "missing_init_data" }, { status: 401 });
   }
 
-  const botToken = process.env.TELEGRAM_BOT_TOKEN || "";
+  const botToken = (process.env.TELEGRAM_BOT_TOKEN || "").trim();
   if (!botToken) {
     return NextResponse.json({ ok: false, error: "missing_bot_token" }, { status: 500 });
   }
@@ -17,6 +17,7 @@ export async function GET() {
   if (!verified?.user) {
     const params = new URLSearchParams(initData);
     const hasHash = Boolean(params.get("hash"));
+    const botId = botToken.split(":")[0] || "";
     return NextResponse.json(
       {
         ok: false,
@@ -24,6 +25,8 @@ export async function GET() {
         debug: {
           initDataLength: initData.length,
           hasHash,
+          botId,
+          tokenLength: botToken.length,
         },
       },
       { status: 401 },

@@ -8,12 +8,12 @@ const ADMIN_IDS = (process.env.TELEGRAM_ADMIN_IDS || "")
 
 export async function getTelegramInitDataFromHeaders() {
   const hdrs = await headers();
-  return hdrs.get("x-telegram-init-data") ?? "";
+  return hdrs.get("x-telegram-init-data")?.trim() ?? "";
 }
 
 export function getTelegramUserFromInitData(initData: string): TelegramWebAppUser | null {
-  const botToken = process.env.TELEGRAM_BOT_TOKEN || "";
-  const verified = verifyTelegramInitData(initData, botToken);
+  const botToken = (process.env.TELEGRAM_BOT_TOKEN || "").trim();
+  const verified = verifyTelegramInitData(initData.trim(), botToken);
   return verified?.user ?? null;
 }
 
