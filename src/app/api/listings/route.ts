@@ -83,19 +83,19 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
   }
 
-  const payload = parsed.data;
+  const parsedPayload = parsed.data;
   const hasUsername = Boolean(tgUser.username);
-  const contactAlt = payload.contactAlt?.trim();
+  const contactAlt = parsedPayload.contactAlt?.trim();
   if (!hasUsername && !contactAlt) {
     return NextResponse.json({ error: "Contact required" }, { status: 400 });
   }
 
-  if (payload.type === "SALE") {
-    if (!payload.price || !payload.currency) {
+  if (parsedPayload.type === "SALE") {
+    if (!parsedPayload.price || !parsedPayload.currency) {
       return NextResponse.json({ error: "Price and currency required for sale" }, { status: 400 });
     }
   }
-  if (payload.type === "TRADE" && !payload.tradeNote) {
+  if (parsedPayload.type === "TRADE" && !parsedPayload.tradeNote) {
     return NextResponse.json({ error: "Trade note required for trade" }, { status: 400 });
   }
 
@@ -121,25 +121,25 @@ export async function POST(req: Request) {
 
   const listing = await prisma.listing.create({
     data: {
-      title: payload.title,
-      description: payload.description ?? null,
-      type: payload.type,
-      price: payload.price ?? null,
-      currency: payload.currency ?? null,
-      tradeNote: payload.tradeNote ?? null,
+      title: parsedPayload.title,
+      description: parsedPayload.description ?? null,
+      type: parsedPayload.type,
+      price: parsedPayload.price ?? null,
+      currency: parsedPayload.currency ?? null,
+      tradeNote: parsedPayload.tradeNote ?? null,
       contactAlt: contactAlt ?? null,
-      gameId: payload.gameId,
-      serverId: payload.serverId ?? null,
-      categoryId: payload.categoryId ?? null,
+      gameId: parsedPayload.gameId,
+      serverId: parsedPayload.serverId ?? null,
+      categoryId: parsedPayload.categoryId ?? null,
       sellerId: user.id,
       images: imageCreates.length
         ? {
             create: imageCreates,
           }
         : undefined,
-      tags: payload.tagIds
+      tags: parsedPayload.tagIds
         ? {
-            create: payload.tagIds.map((tagId) => ({ tagId })),
+            create: parsedPayload.tagIds.map((tagId) => ({ tagId })),
           }
         : undefined,
     },
