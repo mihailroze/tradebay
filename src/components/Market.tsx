@@ -69,17 +69,25 @@ export default function Market() {
     <div className="min-h-screen bg-neutral-950 text-neutral-100">
       <div className="mx-auto flex w-full max-w-6xl flex-col gap-10 px-5 py-10">
         <header className="flex flex-col gap-4">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <p className="text-xs uppercase tracking-[0.3em] text-neutral-400">TradeBay</p>
               <h1 className="text-3xl font-semibold tracking-tight">Рынок игровых лотов</h1>
             </div>
-            <button
-              className="rounded-full border border-neutral-700 px-4 py-2 text-sm hover:border-white hover:text-white"
-              onClick={() => setCreating((v) => !v)}
-            >
-              {creating ? "Скрыть форму" : "Создать лот"}
-            </button>
+            <div className="flex flex-wrap gap-2">
+              <a
+                className="rounded-full border border-neutral-700 px-4 py-2 text-sm hover:border-white hover:text-white"
+                href="/admin"
+              >
+                Админка
+              </a>
+              <button
+                className="rounded-full border border-neutral-700 px-4 py-2 text-sm hover:border-white hover:text-white"
+                onClick={() => setCreating((v) => !v)}
+              >
+                {creating ? "Скрыть форму" : "Создать лот"}
+              </button>
+            </div>
           </div>
           <div className="grid gap-3 md:grid-cols-3">
             <input
