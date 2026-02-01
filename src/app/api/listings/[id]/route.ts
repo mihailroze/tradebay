@@ -7,12 +7,14 @@ const schema = z.object({
   status: z.enum(["ACTIVE", "SOLD", "HIDDEN"]),
 });
 
-export async function PATCH(req: Request, context: { params: { id: string } }) {
+export async function PATCH(req: Request, context: { params: Promise<{ id: string }> }) {
   const initData = getTelegramInitDataFromHeaders();
   const tgUser = getTelegramUserFromInitData(initData);
   if (!tgUser) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+
+  const { id } = await context.params;
 
   const body = await req.json();
   const parsed = schema.safeParse(body);
@@ -21,7 +23,7 @@ export async function PATCH(req: Request, context: { params: { id: string } }) {
   }
 
   const listing = await prisma.listing.findUnique({
-    where: { id: context.params.id },
+    where: { id },
     include: { seller: true },
   });
 
