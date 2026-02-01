@@ -1,22 +1,43 @@
 import { NextResponse } from "next/server";
-import { getTelegramInitDataFromHeaders, getTelegramUserFromInitData, isAdminTelegramId } from "@/lib/auth";
+import { getTelegramInitDataFromHeaders, isAdminTelegramId } from "@/lib/auth";
+import { verifyTelegramInitData } from "@/lib/telegram";
 
 export async function GET() {
   const initData = await getTelegramInitDataFromHeaders();
-  const tgUser = getTelegramUserFromInitData(initData);
+  if (!initData) {
+    return NextResponse.json({ ok: false, error: "missing_init_data" }, { status: 401 });
+  }
 
-  if (!tgUser) {
-    return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
+  const botToken = process.env.TELEGRAM_BOT_TOKEN || "";
+  if (!botToken) {
+    return NextResponse.json({ ok: false, error: "missing_bot_token" }, { status: 500 });
+  }
+
+  const verified = verifyTelegramInitData(initData, botToken);
+  if (!verified?.user) {
+    const params = new URLSearchParams(initData);
+    const hasHash = Boolean(params.get("hash"));
+    return NextResponse.json(
+      {
+        ok: false,
+        error: "invalid_hash",
+        debug: {
+          initDataLength: initData.length,
+          hasHash,
+        },
+      },
+      { status: 401 },
+    );
   }
 
   return NextResponse.json({
     ok: true,
     user: {
-      id: tgUser.id,
-      username: tgUser.username ?? null,
-      firstName: tgUser.first_name ?? null,
-      lastName: tgUser.last_name ?? null,
+      id: verified.user.id,
+      username: verified.user.username ?? null,
+      firstName: verified.user.first_name ?? null,
+      lastName: verified.user.last_name ?? null,
     },
-    isAdmin: isAdminTelegramId(tgUser.id),
+    isAdmin: isAdminTelegramId(verified.user.id),
   });
 }
