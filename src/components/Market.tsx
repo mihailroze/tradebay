@@ -47,8 +47,15 @@ function getInitData(): string {
 
 function readInitDataFromUrl(): string {
   try {
-    const params = new URLSearchParams(window.location.search);
-    const raw = params.get("tgWebAppData") || params.get("initData") || "";
+    const searchParams = new URLSearchParams(window.location.search);
+    const hash = window.location.hash.replace(/^#/, "");
+    const hashParams = new URLSearchParams(hash);
+    const raw =
+      searchParams.get("tgWebAppData") ||
+      searchParams.get("initData") ||
+      hashParams.get("tgWebAppData") ||
+      hashParams.get("initData") ||
+      "";
     if (!raw) return "";
     try {
       return decodeURIComponent(raw);

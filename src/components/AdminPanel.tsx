@@ -23,6 +23,12 @@ type AuthInfo = {
   isAdmin?: boolean;
 };
 
+type DebugInfo = {
+  hasTelegram: boolean;
+  initDataLength: number;
+  urlHasData: boolean;
+};
+
 function getInitData(): string {
   if (typeof window === "undefined") return "";
   const tg = (window as unknown as { Telegram?: { WebApp?: { initData?: string; ready?: () => void } } }).Telegram;
@@ -39,8 +45,15 @@ function getInitData(): string {
 
 function readInitDataFromUrl(): string {
   try {
-    const params = new URLSearchParams(window.location.search);
-    const raw = params.get("tgWebAppData") || params.get("initData") || "";
+    const searchParams = new URLSearchParams(window.location.search);
+    const hash = window.location.hash.replace(/^#/, "");
+    const hashParams = new URLSearchParams(hash);
+    const raw =
+      searchParams.get("tgWebAppData") ||
+      searchParams.get("initData") ||
+      hashParams.get("tgWebAppData") ||
+      hashParams.get("initData") ||
+      "";
     if (!raw) return "";
     try {
       return decodeURIComponent(raw);
@@ -52,10 +65,27 @@ function readInitDataFromUrl(): string {
   }
 }
 
+function hasInitDataInUrl(): boolean {
+  try {
+    const searchParams = new URLSearchParams(window.location.search);
+    const hash = window.location.hash.replace(/^#/, "");
+    const hashParams = new URLSearchParams(hash);
+    return (
+      searchParams.has("tgWebAppData") ||
+      searchParams.has("initData") ||
+      hashParams.has("tgWebAppData") ||
+      hashParams.has("initData")
+    );
+  } catch {
+    return false;
+  }
+}
+
 export default function AdminPanel() {
   const [catalog, setCatalog] = useState<Game[]>([]);
   const [status, setStatus] = useState("");
   const [authInfo, setAuthInfo] = useState<AuthInfo | null>(null);
+  const [debugInfo, setDebugInfo] = useState<DebugInfo | null>(null);
   const [gameName, setGameName] = useState("");
   const [serverName, setServerName] = useState("");
   const [serverGameId, setServerGameId] = useState("");
@@ -71,13 +101,20 @@ export default function AdminPanel() {
     let attempts = 0;
     const read = () => {
       const value = getInitData();
-      const tg = (window as unknown as { Telegram?: { WebApp?: { ready?: () => void } } }).Telegram;
+      const tg = (window as unknown as { Telegram?: { WebApp?: { ready?: () => void; initData?: string } } }).Telegram;
       tg?.WebApp?.ready?.();
+      setDebugInfo({
+        hasTelegram: Boolean(tg?.WebApp),
+        initDataLength: (tg?.WebApp?.initData || "").length,
+        urlHasData: hasInitDataInUrl(),
+      });
+      const debugText = `Debug: tg=${tg?.WebApp ? "yes" : "no"} initData=${(tg?.WebApp?.initData || "").length} url=${hasInitDataInUrl() ? "yes" : "no"}`;
+      setStatus((prev) => (prev && !prev.startsWith("Debug:") ? prev : debugText));
       if (value) {
         setInitData(value);
         return;
       }
-      if (attempts < 5) {
+      if (attempts < 15) {
         attempts += 1;
         setTimeout(read, 300);
       }
