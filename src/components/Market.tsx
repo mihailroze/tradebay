@@ -75,10 +75,30 @@ function readInitDataFromUrl(): string {
 function getListingIdFromUrl(): string {
   try {
     const searchParams = new URLSearchParams(window.location.search);
-    return searchParams.get("listingId") || "";
+    const raw =
+      searchParams.get("listingId") ||
+      searchParams.get("tgWebAppStartParam") ||
+      searchParams.get("startapp") ||
+      "";
+    return normalizeListingId(raw);
   } catch {
     return "";
   }
+}
+
+function getListingIdFromInitData(initData: string): string {
+  try {
+    const params = new URLSearchParams(initData);
+    const raw = params.get("start_param") || "";
+    return normalizeListingId(raw);
+  } catch {
+    return "";
+  }
+}
+
+function normalizeListingId(value: string): string {
+  if (!value) return "";
+  return value.startsWith("l_") ? value.slice(2) : value;
 }
 
 function isSellerOnline(lastSeenAt: string | null | undefined): boolean {
@@ -191,6 +211,12 @@ export default function Market() {
 
   useEffect(() => {
     if (!initData) return;
+    if (!sharedListingId) {
+      const fromInit = getListingIdFromInitData(initData);
+      if (fromInit) {
+        setSharedListingId(fromInit);
+      }
+    }
     fetch("/api/auth/me", {
       headers: {
         "x-telegram-init-data": initData,
@@ -230,6 +256,8 @@ export default function Market() {
     if (typeof window === "undefined") return;
     const url = new URL(window.location.href);
     url.searchParams.delete("listingId");
+    url.searchParams.delete("tgWebAppStartParam");
+    url.searchParams.delete("startapp");
     window.history.replaceState({}, "", url.toString());
     setSharedListing(null);
     setSharedError("");
@@ -576,8 +604,7 @@ function normalizeContact(value: string): string {
 
 function buildShareUrl(listingId: string): string {
   if (typeof window === "undefined") return "";
-  const url = new URL(window.location.origin);
-  url.searchParams.set("listingId", listingId);
+  const url = new URL(`/l/${listingId}`, window.location.origin);
   return url.toString();
 }
 

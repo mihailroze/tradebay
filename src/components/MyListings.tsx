@@ -59,8 +59,7 @@ function readInitDataFromUrl(): string {
 
 function buildShareUrl(listingId: string): string {
   if (typeof window === "undefined") return "";
-  const url = new URL(window.location.origin);
-  url.searchParams.set("listingId", listingId);
+  const url = new URL(`/l/${listingId}`, window.location.origin);
   return url.toString();
 }
 
