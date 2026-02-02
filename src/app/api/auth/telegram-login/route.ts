@@ -3,20 +3,15 @@ import { prisma } from "@/lib/prisma";
 import { verifyTelegramLoginData } from "@/lib/telegram";
 import { createSessionCookie } from "@/lib/session";
 
-export async function POST(req: Request) {
-  const payload = await req.json().catch(() => null);
-  if (!payload || typeof payload !== "object") {
-    return NextResponse.json({ ok: false, error: "invalid_payload" }, { status: 400 });
-  }
-
+async function handleLogin(payload: Record<string, unknown>) {
   const botToken = (process.env.TELEGRAM_BOT_TOKEN || "").trim();
   if (!botToken) {
-    return NextResponse.json({ ok: false, error: "missing_bot_token" }, { status: 500 });
+    return { ok: false, error: "missing_bot_token", status: 500 };
   }
 
-  const verified = verifyTelegramLoginData(payload as Record<string, unknown>, botToken);
+  const verified = verifyTelegramLoginData(payload, botToken);
   if (!verified) {
-    return NextResponse.json({ ok: false, error: "invalid_hash" }, { status: 401 });
+    return { ok: false, error: "invalid_hash", status: 401 };
   }
 
   const user = await prisma.user.upsert({
@@ -41,13 +36,58 @@ export async function POST(req: Request) {
     lastName: verified.last_name ?? null,
   });
 
-  const res = NextResponse.json({
+  return {
     ok: true,
+    status: 200,
+    cookie,
     user: {
       id: user.telegramId,
       username: user.username,
     },
-  });
-  res.headers.set("Set-Cookie", cookie);
+  };
+}
+
+function safeReturnTo(raw: string | null, origin: string) {
+  if (!raw) return origin;
+  try {
+    const url = new URL(raw, origin);
+    if (url.origin !== origin) return origin;
+    return url.toString();
+  } catch {
+    return origin;
+  }
+}
+
+export async function GET(req: Request) {
+  const url = new URL(req.url);
+  const payload = Object.fromEntries(url.searchParams.entries());
+  if (!payload || !payload.hash) {
+    return NextResponse.json({ ok: false, error: "invalid_payload" }, { status: 400 });
+  }
+
+  const result = await handleLogin(payload);
+  const returnTo = safeReturnTo(url.searchParams.get("return_to"), url.origin);
+  if (!result.ok) {
+    return NextResponse.redirect(`${returnTo}?login_error=${encodeURIComponent(result.error || "auth_failed")}`, 302);
+  }
+
+  const res = NextResponse.redirect(returnTo, 302);
+  res.headers.set("Set-Cookie", result.cookie);
+  return res;
+}
+
+export async function POST(req: Request) {
+  const payload = await req.json().catch(() => null);
+  if (!payload || typeof payload !== "object") {
+    return NextResponse.json({ ok: false, error: "invalid_payload" }, { status: 400 });
+  }
+
+  const result = await handleLogin(payload as Record<string, unknown>);
+  if (!result.ok) {
+    return NextResponse.json({ ok: false, error: result.error }, { status: result.status });
+  }
+
+  const res = NextResponse.json({ ok: true, user: result.user });
+  res.headers.set("Set-Cookie", result.cookie);
   return res;
 }
