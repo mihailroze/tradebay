@@ -1,6 +1,7 @@
 import { Buffer } from "buffer";
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { getTelegramInitDataFromHeaders, getTelegramUserFromInitData } from "@/lib/auth";
 
@@ -36,7 +37,7 @@ export async function GET(req: Request) {
   const page = Number.isFinite(pageRaw) ? Math.max(1, pageRaw) : 1;
   const pageSize = Number.isFinite(pageSizeRaw) ? Math.min(50, Math.max(10, pageSizeRaw)) : 20;
 
-  const where = {
+  const where: Prisma.ListingWhereInput = {
     status: "ACTIVE" as const,
     gameId,
     serverId,
@@ -45,8 +46,8 @@ export async function GET(req: Request) {
     ...(search
       ? {
           OR: [
-            { title: { contains: search, mode: "insensitive" } },
-            { description: { contains: search, mode: "insensitive" } },
+            { title: { contains: search, mode: Prisma.QueryMode.insensitive } },
+            { description: { contains: search, mode: Prisma.QueryMode.insensitive } },
           ],
         }
       : {}),
