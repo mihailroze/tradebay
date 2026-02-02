@@ -14,6 +14,13 @@ type CatalogResponse = { games: Game[] };
 type AuthInfo = {
   ok: boolean;
   error?: string;
+  debug?: {
+    initDataLength?: number;
+    hasHash?: boolean;
+    hasSignature?: boolean;
+    botId?: string;
+    tokenLength?: number;
+  };
   user?: {
     id: number;
     username: string | null;
@@ -182,7 +189,14 @@ export default function AdminPanel() {
               TG ID: {authInfo.user?.id} · Admin: {authInfo.isAdmin ? "yes" : "no"}
             </p>
           ) : authInfo?.error ? (
-            <p className="text-xs text-amber-400">Auth: {authInfo.error}</p>
+            <p className="text-xs text-amber-400">
+              Auth: {authInfo.error}
+              {authInfo.debug
+                ? ` · hash=${authInfo.debug.hasHash ? "yes" : "no"} · sig=${authInfo.debug.hasSignature ? "yes" : "no"} · botId=${
+                    authInfo.debug.botId ?? "-"
+                  } · tokenLen=${authInfo.debug.tokenLength ?? "-"}`
+                : ""}
+            </p>
           ) : null}
           <p className="text-xs text-neutral-500">{status}</p>
         </header>

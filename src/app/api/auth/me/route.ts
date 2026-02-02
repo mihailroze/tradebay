@@ -17,6 +17,7 @@ export async function GET() {
   if (!verified?.user) {
     const params = new URLSearchParams(initData);
     const hasHash = Boolean(params.get("hash"));
+    const hasSignature = Boolean(params.get("signature"));
     const botId = botToken.split(":")[0] || "";
     return NextResponse.json(
       {
@@ -25,6 +26,7 @@ export async function GET() {
         debug: {
           initDataLength: initData.length,
           hasHash,
+          hasSignature,
           botId,
           tokenLength: botToken.length,
         },
