@@ -21,8 +21,13 @@ export default function TelegramLogin({ onSuccess }: Props) {
 
     if (!containerRef.current) return;
     containerRef.current.innerHTML = "";
-    const authUrl = new URL("/api/auth/telegram-login", window.location.origin);
-    authUrl.searchParams.set("return_to", window.location.href);
+    const baseUrl = normalizeEnvValue(process.env.NEXT_PUBLIC_SITE_URL) || window.location.origin;
+    const authUrl = new URL("/api/auth/telegram-login", baseUrl);
+    const returnTo = new URL(
+      `${window.location.pathname}${window.location.search}${window.location.hash}`,
+      baseUrl,
+    );
+    authUrl.searchParams.set("return_to", returnTo.toString());
     const script = document.createElement("script");
     script.async = true;
     script.src = "https://telegram.org/js/telegram-widget.js?22";
