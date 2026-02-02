@@ -10,8 +10,8 @@ type PageProps = {
 
 export const dynamic = "force-dynamic";
 
-function getBaseUrl() {
-  const hdrs = headers();
+async function getBaseUrl() {
+  const hdrs = await headers();
   const host = hdrs.get("x-forwarded-host") || hdrs.get("host") || "localhost:3000";
   const proto = hdrs.get("x-forwarded-proto") || "https";
   return `${proto}://${host}`;
@@ -45,7 +45,7 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   const { id } = await params;
   const listing = await loadListing(id);
   if (!listing) return { title: "Лот не найден · TradeBay" };
-  const baseUrl = getBaseUrl();
+  const baseUrl = await getBaseUrl();
   const imageId = listing.images[0]?.id;
   const description = buildDescription(listing);
   return {
