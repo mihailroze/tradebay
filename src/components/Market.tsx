@@ -123,6 +123,7 @@ export default function Market() {
   const [creating, setCreating] = useState(false);
   const [status, setStatus] = useState("");
   const [initData, setInitData] = useState("");
+  const [hasAuth, setHasAuth] = useState(false);
   const [sharedListingId, setSharedListingId] = useState("");
   const [sharedListing, setSharedListing] = useState<Listing | null>(null);
   const [sharedError, setSharedError] = useState("");
@@ -217,11 +218,11 @@ export default function Market() {
         setSharedListingId(fromInit);
       }
     }
-    fetch("/api/auth/me", {
-      headers: {
-        "x-telegram-init-data": initData,
-      },
-    }).catch(() => undefined);
+    const headers = initData ? { "x-telegram-init-data": initData } : undefined;
+    fetch("/api/auth/me", { headers })
+      .then((res) => res.json())
+      .then((data: { ok?: boolean }) => setHasAuth(Boolean(data.ok)))
+      .catch(() => setHasAuth(false));
   }, [initData]);
 
   const game = catalog.find((g) => g.id === gameId);
@@ -231,15 +232,13 @@ export default function Market() {
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
   const toggleFavorite = async (listingId: string, next: boolean) => {
-    if (!initData) {
-      setStatus("Откройте страницу в Telegram Web App.");
+    if (!initData && !hasAuth) {
+      setStatus("Войдите через Telegram, чтобы пользоваться избранным.");
       return;
     }
     const res = await fetch(`/api/favorites/${listingId}`, {
       method: next ? "POST" : "DELETE",
-      headers: {
-        "x-telegram-init-data": initData,
-      },
+      headers: initData ? { "x-telegram-init-data": initData } : undefined,
     });
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
@@ -399,7 +398,7 @@ export default function Market() {
           </div>
         </header>
 
-        {creating ? <CreateListing catalog={catalog} initData={initData} /> : null}
+        {creating ? <CreateListing catalog={catalog} initData={initData} hasAuth={hasAuth} /> : null}
 
         {sharedListing ? (
           <div className="flex flex-col gap-3">
@@ -617,7 +616,7 @@ function buildShareText(listing: Listing): string {
   return raw.length > 140 ? `${raw.slice(0, 137)}...` : raw;
 }
 
-function CreateListing({ catalog, initData }: { catalog: Game[]; initData: string }) {
+function CreateListing({ catalog, initData, hasAuth }: { catalog: Game[]; initData: string; hasAuth: boolean }) {
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [type, setType] = useState<"SALE" | "TRADE">("SALE");
@@ -640,6 +639,10 @@ function CreateListing({ catalog, initData }: { catalog: Game[]; initData: strin
 
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault();
+    if (!initData && !hasAuth) {
+      setStatus("Войдите через Telegram, чтобы создать лот.");
+      return;
+    }
     setStatus("Отправляем...");
     const formData = new FormData();
     formData.append("title", title);
@@ -660,9 +663,7 @@ function CreateListing({ catalog, initData }: { catalog: Game[]; initData: strin
 
     const res = await fetch("/api/listings", {
       method: "POST",
-      headers: {
-        "x-telegram-init-data": initData,
-      },
+      headers: initData ? { "x-telegram-init-data": initData } : undefined,
       body: formData,
     });
 

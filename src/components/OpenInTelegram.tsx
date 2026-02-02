@@ -35,8 +35,6 @@ export default function OpenInTelegram({ listingId }: Props) {
 
   useEffect(() => {
     if (!link) return;
-    const tgWebApp = (window as unknown as { Telegram?: { WebApp?: unknown } }).Telegram?.WebApp;
-    if (tgWebApp) return;
     const ua = navigator.userAgent || "";
     const isTelegram = /Telegram/i.test(ua);
     if (isTelegram) {

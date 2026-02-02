@@ -1,5 +1,6 @@
 import { headers } from "next/headers";
 import { verifyTelegramInitData, TelegramWebAppUser } from "@/lib/telegram";
+import { getSessionFromCookies } from "@/lib/session";
 
 const ADMIN_IDS = (process.env.TELEGRAM_ADMIN_IDS || "")
   .split(",")
@@ -15,6 +16,28 @@ export function getTelegramUserFromInitData(initData: string): TelegramWebAppUse
   const botToken = (process.env.TELEGRAM_BOT_TOKEN || "").trim();
   const verified = verifyTelegramInitData(initData.trim(), botToken);
   return verified?.user ?? null;
+}
+
+export type AuthTelegramUser = TelegramWebAppUser & { source: "webapp" | "session" };
+
+export async function getAuthTelegramUser(): Promise<AuthTelegramUser | null> {
+  const initData = await getTelegramInitDataFromHeaders();
+  const webAppUser = initData ? getTelegramUserFromInitData(initData) : null;
+  if (webAppUser) {
+    return { ...webAppUser, source: "webapp" };
+  }
+
+  const session = await getSessionFromCookies();
+  if (!session) return null;
+  const id = Number(session.telegramId);
+  if (!Number.isFinite(id)) return null;
+  return {
+    id,
+    username: session.username ?? undefined,
+    first_name: session.firstName ?? undefined,
+    last_name: session.lastName ?? undefined,
+    source: "session",
+  };
 }
 
 export function isAdminTelegramId(telegramId?: number | string | null): boolean {

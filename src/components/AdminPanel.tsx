@@ -139,24 +139,24 @@ export default function AdminPanel() {
   }, []);
 
   useEffect(() => {
-    if (!initData) return;
-    fetch("/api/auth/me", {
-      headers: {
-        "x-telegram-init-data": initData,
-      },
-    })
+    const headers = initData ? { "x-telegram-init-data": initData } : undefined;
+    fetch("/api/auth/me", { headers })
       .then((res) => res.json())
       .then((data: AuthInfo) => setAuthInfo(data))
       .catch(() => setAuthInfo({ ok: false, error: "Failed to load auth info" }));
   }, [initData]);
 
   const createEntity = async (url: string, payload: Record<string, unknown>) => {
+    if (!authInfo?.ok) {
+      setStatus("Войдите через Telegram, чтобы управлять каталогом.");
+      return;
+    }
     setStatus("Сохраняем...");
     const res = await fetch(url, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "x-telegram-init-data": initData,
+        ...(initData ? { "x-telegram-init-data": initData } : {}),
       },
       body: JSON.stringify(payload),
     });
@@ -179,8 +179,8 @@ export default function AdminPanel() {
         <TopNav />
         <header className="flex flex-col gap-2">
           <h2 className="text-2xl font-semibold tracking-tight">Админка каталога</h2>
-          {!initData ? (
-            <p className="text-sm text-amber-400">Откройте страницу из Telegram Web App для прав админа.</p>
+          {!initData && !authInfo?.ok ? (
+            <p className="text-sm text-amber-400">Войдите через Telegram, чтобы получить доступ к админке.</p>
           ) : null}
           {debugInfo ? (
             <p className="text-xs text-neutral-500">

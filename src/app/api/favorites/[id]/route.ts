@@ -1,10 +1,9 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { getTelegramInitDataFromHeaders, getTelegramUserFromInitData } from "@/lib/auth";
+import { getAuthTelegramUser } from "@/lib/auth";
 
 export async function POST(_req: Request, context: { params: Promise<{ id: string }> }) {
-  const initData = await getTelegramInitDataFromHeaders();
-  const tgUser = getTelegramUserFromInitData(initData);
+  const tgUser = await getAuthTelegramUser();
   if (!tgUser) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
@@ -38,8 +37,7 @@ export async function POST(_req: Request, context: { params: Promise<{ id: strin
 }
 
 export async function DELETE(_req: Request, context: { params: Promise<{ id: string }> }) {
-  const initData = await getTelegramInitDataFromHeaders();
-  const tgUser = getTelegramUserFromInitData(initData);
+  const tgUser = await getAuthTelegramUser();
   if (!tgUser) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }

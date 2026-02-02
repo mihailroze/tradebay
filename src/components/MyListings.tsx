@@ -76,6 +76,7 @@ export default function MyListings() {
   const [initData, setInitData] = useState("");
   const [listings, setListings] = useState<Listing[]>([]);
   const [status, setStatus] = useState("");
+  const [hasAuth, setHasAuth] = useState(false);
 
   useEffect(() => {
     let attempts = 0;
@@ -94,11 +95,9 @@ export default function MyListings() {
   }, []);
 
   const loadListings = () => {
-    if (!initData) return;
+    if (!initData && !hasAuth) return;
     fetch("/api/my/listings", {
-      headers: {
-        "x-telegram-init-data": initData,
-      },
+      headers: initData ? { "x-telegram-init-data": initData } : undefined,
     })
       .then((res) => res.json())
       .then((data: ListingsResponse) => setListings(data.listings))
@@ -106,23 +105,28 @@ export default function MyListings() {
   };
 
   useEffect(() => {
-    if (!initData) return;
-    fetch("/api/auth/me", {
-      headers: {
-        "x-telegram-init-data": initData,
-      },
-    }).catch(() => undefined);
-    loadListings();
+    const headers = initData ? { "x-telegram-init-data": initData } : undefined;
+    fetch("/api/auth/me", { headers })
+      .then((res) => res.json())
+      .then((data: { ok?: boolean }) => setHasAuth(Boolean(data.ok)))
+      .catch(() => setHasAuth(false));
   }, [initData]);
 
+  useEffect(() => {
+    loadListings();
+  }, [initData, hasAuth]);
+
   const updateStatus = async (id: string, nextStatus: Listing["status"]) => {
+    if (!initData && !hasAuth) {
+      setStatus("Войдите через Telegram, чтобы управлять лотами.");
+      return;
+    }
     setStatus("Обновляем...");
+    const headers: Record<string, string> = { "Content-Type": "application/json" };
+    if (initData) headers["x-telegram-init-data"] = initData;
     const res = await fetch(`/api/listings/${id}`, {
       method: "PATCH",
-      headers: {
-        "Content-Type": "application/json",
-        "x-telegram-init-data": initData,
-      },
+      headers,
       body: JSON.stringify({ status: nextStatus }),
     });
 
@@ -160,8 +164,8 @@ export default function MyListings() {
           <span className="text-xs text-neutral-400">{status}</span>
         </header>
 
-        {!initData ? (
-          <p className="text-sm text-amber-400">Откройте страницу из Telegram Web App.</p>
+        {!initData && !hasAuth ? (
+          <p className="text-sm text-amber-400">Войдите через Telegram, чтобы управлять лотами.</p>
         ) : null}
 
         <section className="grid gap-4 md:grid-cols-2">

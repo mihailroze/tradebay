@@ -13,6 +13,16 @@ export type TelegramInitData = {
   [key: string]: string | number | TelegramWebAppUser | undefined;
 };
 
+export type TelegramLoginData = {
+  id: number;
+  username?: string;
+  first_name?: string;
+  last_name?: string;
+  photo_url?: string;
+  auth_date?: number;
+  hash: string;
+};
+
 function buildDataCheckString(params: URLSearchParams, includeSignature: boolean): string {
   const entries: string[] = [];
   params.forEach((value, key) => {
@@ -58,4 +68,37 @@ export function verifyTelegramInitData(initData: string, botToken: string): Tele
   });
 
   return result;
+}
+
+export function verifyTelegramLoginData(payload: Record<string, unknown>, botToken: string): TelegramLoginData | null {
+  if (!payload || !botToken) return null;
+  const hash = typeof payload.hash === "string" ? payload.hash : "";
+  if (!hash) return null;
+
+  const data: Record<string, string> = {};
+  Object.entries(payload).forEach(([key, value]) => {
+    if (key === "hash" || value === undefined || value === null) return;
+    data[key] = String(value);
+  });
+
+  const dataCheckString = Object.keys(data)
+    .sort()
+    .map((key) => `${key}=${data[key]}`)
+    .join("\n");
+  const secret = crypto.createHash("sha256").update(botToken).digest();
+  const calculated = crypto.createHmac("sha256", secret).update(dataCheckString).digest("hex");
+  if (calculated !== hash) return null;
+
+  const idRaw = typeof payload.id === "string" ? Number(payload.id) : Number(payload.id);
+  if (!Number.isFinite(idRaw)) return null;
+
+  return {
+    id: idRaw,
+    username: typeof payload.username === "string" ? payload.username : undefined,
+    first_name: typeof payload.first_name === "string" ? payload.first_name : undefined,
+    last_name: typeof payload.last_name === "string" ? payload.last_name : undefined,
+    photo_url: typeof payload.photo_url === "string" ? payload.photo_url : undefined,
+    auth_date: payload.auth_date ? Number(payload.auth_date) : undefined,
+    hash,
+  };
 }

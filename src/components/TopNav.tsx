@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
+import TelegramLogin from "@/components/TelegramLogin";
 
 const baseLinks = [
   { href: "/", label: "Рынок" },
@@ -49,7 +50,9 @@ function readInitDataFromUrl(): string {
 export default function TopNav() {
   const pathname = usePathname();
   const [isAdmin, setIsAdmin] = useState(false);
+  const [isAuthed, setIsAuthed] = useState(false);
   const [initData, setInitData] = useState("");
+  const [authTick, setAuthTick] = useState(0);
 
   useEffect(() => {
     let attempts = 0;
@@ -68,16 +71,18 @@ export default function TopNav() {
   }, []);
 
   useEffect(() => {
-    if (!initData) return;
-    fetch("/api/auth/me", {
-      headers: {
-        "x-telegram-init-data": initData,
-      },
-    })
+    const headers = initData ? { "x-telegram-init-data": initData } : undefined;
+    fetch("/api/auth/me", { headers })
       .then((res) => res.json())
-      .then((data: { isAdmin?: boolean }) => setIsAdmin(Boolean(data.isAdmin)))
-      .catch(() => setIsAdmin(false));
-  }, [initData]);
+      .then((data: { ok?: boolean; isAdmin?: boolean }) => {
+        setIsAdmin(Boolean(data.isAdmin));
+        setIsAuthed(Boolean(data.ok));
+      })
+      .catch(() => {
+        setIsAdmin(false);
+        setIsAuthed(false);
+      });
+  }, [initData, authTick]);
 
   const links = isAdmin ? [...baseLinks, { href: "/admin", label: "Админка" }] : baseLinks;
 
@@ -87,7 +92,7 @@ export default function TopNav() {
         <p className="text-xs uppercase tracking-[0.3em] text-neutral-400">TradeBay</p>
         <h1 className="text-lg font-semibold tracking-tight">Игровой рынок</h1>
       </div>
-      <div className="flex flex-wrap gap-2">
+      <div className="flex flex-wrap items-center gap-3">
         {links.map((link) => {
           const active = pathname === link.href;
           return (
@@ -102,6 +107,7 @@ export default function TopNav() {
             </Link>
           );
         })}
+        {!initData && !isAuthed ? <TelegramLogin onSuccess={() => setAuthTick((v) => v + 1)} /> : null}
       </div>
     </nav>
   );

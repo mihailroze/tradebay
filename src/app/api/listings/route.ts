@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { getTelegramInitDataFromHeaders, getTelegramUserFromInitData } from "@/lib/auth";
+import { getAuthTelegramUser } from "@/lib/auth";
 
 const MAX_IMAGES = 5;
 const MAX_IMAGE_SIZE = 2 * 1024 * 1024;
@@ -85,8 +85,7 @@ export async function GET(req: Request) {
     }),
   ]);
 
-  const initData = await getTelegramInitDataFromHeaders();
-  const tgUser = getTelegramUserFromInitData(initData);
+  const tgUser = await getAuthTelegramUser();
   let favoriteIds = new Set<string>();
   if (tgUser && listings.length) {
     const user = await prisma.user.findUnique({
@@ -114,8 +113,7 @@ export async function GET(req: Request) {
 }
 
 export async function POST(req: Request) {
-  const initData = await getTelegramInitDataFromHeaders();
-  const tgUser = getTelegramUserFromInitData(initData);
+  const tgUser = await getAuthTelegramUser();
   if (!tgUser) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { getTelegramInitDataFromHeaders, getTelegramUserFromInitData, isAdminTelegramId } from "@/lib/auth";
+import { getAuthTelegramUser, isAdminTelegramId } from "@/lib/auth";
 
 const schema = z.object({
   status: z.enum(["ACTIVE", "SOLD", "HIDDEN"]),
@@ -25,8 +25,7 @@ export async function GET(_req: Request, context: { params: Promise<{ id: string
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
-  const initData = await getTelegramInitDataFromHeaders();
-  const tgUser = getTelegramUserFromInitData(initData);
+  const tgUser = await getAuthTelegramUser();
   const isAdmin = tgUser ? isAdminTelegramId(tgUser.id) : false;
   const isOwner = tgUser ? listing.seller?.telegramId === String(tgUser.id) : false;
 
@@ -61,8 +60,7 @@ export async function GET(_req: Request, context: { params: Promise<{ id: string
 }
 
 export async function PATCH(req: Request, context: { params: Promise<{ id: string }> }) {
-  const initData = await getTelegramInitDataFromHeaders();
-  const tgUser = getTelegramUserFromInitData(initData);
+  const tgUser = await getAuthTelegramUser();
   if (!tgUser) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }

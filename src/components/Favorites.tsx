@@ -79,6 +79,7 @@ export default function Favorites() {
   const [status, setStatus] = useState("");
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
+  const [hasAuth, setHasAuth] = useState(false);
 
   useEffect(() => {
     let attempts = 0;
@@ -97,14 +98,12 @@ export default function Favorites() {
   }, []);
 
   const loadListings = () => {
-    if (!initData) return;
+    if (!initData && !hasAuth) return;
     const params = new URLSearchParams();
     params.set("page", String(page));
     params.set("pageSize", String(PAGE_SIZE));
     fetch(`/api/favorites?${params.toString()}`, {
-      headers: {
-        "x-telegram-init-data": initData,
-      },
+      headers: initData ? { "x-telegram-init-data": initData } : undefined,
     })
       .then((res) => res.json())
       .then((data: ListingsResponse) => {
@@ -115,26 +114,26 @@ export default function Favorites() {
   };
 
   useEffect(() => {
-    if (!initData) return;
-    fetch("/api/auth/me", {
-      headers: {
-        "x-telegram-init-data": initData,
-      },
-    }).catch(() => undefined);
+    const headers = initData ? { "x-telegram-init-data": initData } : undefined;
+    fetch("/api/auth/me", { headers })
+      .then((res) => res.json())
+      .then((data: { ok?: boolean }) => setHasAuth(Boolean(data.ok)))
+      .catch(() => setHasAuth(false));
+  }, [initData]);
+
+  useEffect(() => {
     loadListings();
-  }, [initData, page]);
+  }, [initData, page, hasAuth]);
 
   const toggleFavorite = async (listingId: string, next: boolean) => {
-    if (!initData) {
-      setStatus("Откройте страницу в Telegram Web App.");
+    if (!initData && !hasAuth) {
+      setStatus("Войдите через Telegram, чтобы пользоваться избранным.");
       return;
     }
     setStatus("Обновляем...");
     const res = await fetch(`/api/favorites/${listingId}`, {
       method: next ? "POST" : "DELETE",
-      headers: {
-        "x-telegram-init-data": initData,
-      },
+      headers: initData ? { "x-telegram-init-data": initData } : undefined,
     });
 
     if (!res.ok) {
@@ -158,8 +157,8 @@ export default function Favorites() {
           <span className="text-xs text-neutral-400">{status}</span>
         </header>
 
-        {!initData ? (
-          <p className="text-sm text-amber-400">Откройте страницу из Telegram Web App.</p>
+        {!initData && !hasAuth ? (
+          <p className="text-sm text-amber-400">Войдите через Telegram, чтобы видеть избранное.</p>
         ) : null}
 
         <section className="grid gap-4 md:grid-cols-2">
