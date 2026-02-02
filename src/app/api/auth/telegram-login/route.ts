@@ -72,7 +72,9 @@ export async function GET(req: Request) {
   }
 
   const res = NextResponse.redirect(returnTo, 302);
-  res.headers.set("Set-Cookie", result.cookie);
+  if (result.cookie) {
+    res.headers.set("Set-Cookie", result.cookie);
+  }
   return res;
 }
 
@@ -88,6 +90,8 @@ export async function POST(req: Request) {
   }
 
   const res = NextResponse.json({ ok: true, user: result.user });
-  res.headers.set("Set-Cookie", result.cookie);
+  if (result.cookie) {
+    res.headers.set("Set-Cookie", result.cookie);
+  }
   return res;
 }
