@@ -3,10 +3,11 @@ import { getTelegramInitDataFromHeaders, isAdminTelegramId } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { verifyTelegramInitData } from "@/lib/telegram";
 import { getSessionFromCookies } from "@/lib/session";
+import { normalizeEnvValue } from "@/lib/env";
 
 export async function GET() {
   const initData = await getTelegramInitDataFromHeaders();
-  const botToken = (process.env.TELEGRAM_BOT_TOKEN || "").trim();
+  const botToken = normalizeEnvValue(process.env.TELEGRAM_BOT_TOKEN);
   if (!botToken) {
     return NextResponse.json({ ok: false, error: "missing_bot_token" }, { status: 500 });
   }

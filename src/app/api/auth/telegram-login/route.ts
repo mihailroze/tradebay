@@ -2,9 +2,10 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { verifyTelegramLoginData } from "@/lib/telegram";
 import { createSessionCookie } from "@/lib/session";
+import { normalizeEnvValue } from "@/lib/env";
 
 async function handleLogin(payload: Record<string, unknown>) {
-  const botToken = (process.env.TELEGRAM_BOT_TOKEN || "").trim();
+  const botToken = normalizeEnvValue(process.env.TELEGRAM_BOT_TOKEN);
   if (!botToken) {
     return { ok: false, error: "missing_bot_token", status: 500 };
   }

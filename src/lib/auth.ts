@@ -1,5 +1,6 @@
 import { headers } from "next/headers";
 import { verifyTelegramInitData, TelegramWebAppUser } from "@/lib/telegram";
+import { normalizeEnvValue } from "@/lib/env";
 import { getSessionFromCookies } from "@/lib/session";
 
 const ADMIN_IDS = (process.env.TELEGRAM_ADMIN_IDS || "")
@@ -13,7 +14,7 @@ export async function getTelegramInitDataFromHeaders() {
 }
 
 export function getTelegramUserFromInitData(initData: string): TelegramWebAppUser | null {
-  const botToken = (process.env.TELEGRAM_BOT_TOKEN || "").trim();
+  const botToken = normalizeEnvValue(process.env.TELEGRAM_BOT_TOKEN);
   const verified = verifyTelegramInitData(initData.trim(), botToken);
   return verified?.user ?? null;
 }

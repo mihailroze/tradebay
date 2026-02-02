@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { normalizeEnvValue } from "@/lib/env";
 
 type Props = {
   onSuccess?: () => void;
@@ -11,10 +12,10 @@ export default function TelegramLogin({ onSuccess }: Props) {
   const [status, setStatus] = useState("");
 
   useEffect(() => {
-    const raw = (process.env.NEXT_PUBLIC_TELEGRAM_BOT_USERNAME || "").trim();
+    const raw = normalizeEnvValue(process.env.NEXT_PUBLIC_TELEGRAM_BOT_USERNAME);
     const username = raw.startsWith("@") ? raw.slice(1) : raw;
     if (!username) {
-      setStatus("Укажите NEXT_PUBLIC_TELEGRAM_BOT_USERNAME");
+      setStatus("Set NEXT_PUBLIC_TELEGRAM_BOT_USERNAME");
       return;
     }
 

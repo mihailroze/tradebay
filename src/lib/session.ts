@@ -1,5 +1,6 @@
 import crypto from "crypto";
 import { cookies } from "next/headers";
+import { normalizeEnvValue } from "@/lib/env";
 
 const SESSION_COOKIE = "tb_session";
 const SESSION_MAX_AGE = 60 * 60 * 24 * 30;
@@ -13,7 +14,8 @@ export type SessionPayload = {
 };
 
 function getSessionSecret(): string {
-  const secret = (process.env.SESSION_SECRET || process.env.TELEGRAM_BOT_TOKEN || "").trim();
+  const secret =
+    normalizeEnvValue(process.env.SESSION_SECRET) || normalizeEnvValue(process.env.TELEGRAM_BOT_TOKEN);
   if (!secret) {
     throw new Error("SESSION_SECRET is not configured");
   }
