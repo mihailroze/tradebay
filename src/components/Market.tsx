@@ -2,6 +2,7 @@
 
 import type { FormEvent } from "react";
 import { useEffect, useState } from "react";
+import TopNav from "@/components/TopNav";
 
 type Game = {
   id: string;
@@ -25,7 +26,7 @@ type Listing = {
   game?: { id: string; name: string };
   server?: { id: string; name: string } | null;
   category?: { id: string; name: string } | null;
-  seller?: { username?: string | null };
+  seller?: { username?: string | null; lastSeenAt?: string | null };
 };
 
 type CatalogResponse = { games: Game[] };
@@ -72,6 +73,9 @@ export default function Market() {
   const [listings, setListings] = useState<Listing[]>([]);
   const [search, setSearch] = useState("");
   const [gameId, setGameId] = useState("");
+  const [serverId, setServerId] = useState("");
+  const [categoryId, setCategoryId] = useState("");
+  const [tagId, setTagId] = useState("");
   const [type, setType] = useState("");
   const [creating, setCreating] = useState(false);
 
@@ -104,36 +108,43 @@ export default function Market() {
     const params = new URLSearchParams();
     if (search) params.set("search", search);
     if (gameId) params.set("gameId", gameId);
+    if (serverId) params.set("serverId", serverId);
+    if (categoryId) params.set("categoryId", categoryId);
+    if (tagId) params.set("tagId", tagId);
     if (type) params.set("type", type);
     fetch(`/api/listings?${params.toString()}`)
       .then((res) => res.json())
       .then((data: ListingsResponse) => setListings(data.listings))
       .catch(() => setListings([]));
-  }, [search, gameId, type]);
+  }, [search, gameId, serverId, categoryId, tagId, type]);
+
+  useEffect(() => {
+    if (!initData) return;
+    fetch("/api/auth/me", {
+      headers: {
+        "x-telegram-init-data": initData,
+      },
+    }).catch(() => undefined);
+  }, [initData]);
+
+  const game = catalog.find((g) => g.id === gameId);
+  const servers = game?.servers ?? [];
+  const categories = game?.categories ?? [];
+  const tags = game?.tags ?? [];
 
   return (
     <div className="min-h-screen bg-neutral-950 text-neutral-100">
       <div className="mx-auto flex w-full max-w-6xl flex-col gap-10 px-5 py-10">
+        <TopNav />
         <header className="flex flex-col gap-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <p className="text-xs uppercase tracking-[0.3em] text-neutral-400">TradeBay</p>
-              <h1 className="text-3xl font-semibold tracking-tight">Рынок игровых лотов</h1>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <a
-                className="rounded-full border border-neutral-700 px-4 py-2 text-sm hover:border-white hover:text-white"
-                href="/admin"
-              >
-                Админка
-              </a>
-              <button
-                className="rounded-full border border-neutral-700 px-4 py-2 text-sm hover:border-white hover:text-white"
-                onClick={() => setCreating((v) => !v)}
-              >
-                {creating ? "Скрыть форму" : "Создать лот"}
-              </button>
-            </div>
+            <h2 className="text-2xl font-semibold tracking-tight">Рынок игровых лотов</h2>
+            <button
+              className="rounded-full border border-neutral-700 px-4 py-2 text-sm hover:border-white hover:text-white"
+              onClick={() => setCreating((v) => !v)}
+            >
+              {creating ? "Скрыть форму" : "Создать лот"}
+            </button>
           </div>
           <div className="grid gap-3 md:grid-cols-3">
             <input
@@ -144,7 +155,12 @@ export default function Market() {
             />
             <select
               value={gameId}
-              onChange={(e) => setGameId(e.target.value)}
+              onChange={(e) => {
+                setGameId(e.target.value);
+                setServerId("");
+                setCategoryId("");
+                setTagId("");
+              }}
               className="w-full rounded-2xl border border-neutral-800 bg-neutral-900 px-4 py-3 text-sm outline-none focus:border-neutral-500"
             >
               <option value="">Все игры</option>
@@ -162,6 +178,42 @@ export default function Market() {
               <option value="">Все типы</option>
               <option value="SALE">Продажа</option>
               <option value="TRADE">Обмен</option>
+            </select>
+            <select
+              value={serverId}
+              onChange={(e) => setServerId(e.target.value)}
+              className="w-full rounded-2xl border border-neutral-800 bg-neutral-900 px-4 py-3 text-sm outline-none focus:border-neutral-500"
+            >
+              <option value="">Все серверы</option>
+              {servers.map((server) => (
+                <option key={server.id} value={server.id}>
+                  {server.name}
+                </option>
+              ))}
+            </select>
+            <select
+              value={categoryId}
+              onChange={(e) => setCategoryId(e.target.value)}
+              className="w-full rounded-2xl border border-neutral-800 bg-neutral-900 px-4 py-3 text-sm outline-none focus:border-neutral-500"
+            >
+              <option value="">Все категории</option>
+              {categories.map((category) => (
+                <option key={category.id} value={category.id}>
+                  {category.name}
+                </option>
+              ))}
+            </select>
+            <select
+              value={tagId}
+              onChange={(e) => setTagId(e.target.value)}
+              className="w-full rounded-2xl border border-neutral-800 bg-neutral-900 px-4 py-3 text-sm outline-none focus:border-neutral-500"
+            >
+              <option value="">Все теги</option>
+              {tags.map((tag) => (
+                <option key={tag.id} value={tag.id}>
+                  #{tag.name}
+                </option>
+              ))}
             </select>
           </div>
         </header>
@@ -220,19 +272,26 @@ function ContactButton({ listing }: { listing: Listing }) {
   const username = listing.seller?.username;
   const rawContact = username ? `https://t.me/${username}` : listing.contactAlt || "";
   const contact = normalizeContact(rawContact);
+  const online = isSellerOnline(listing.seller?.lastSeenAt || null);
   return (
-    <button
-      className="rounded-full bg-white px-4 py-2 text-xs font-semibold text-black"
-      onClick={() => {
-        if (contact) {
-          window.open(contact, "_blank");
-        } else {
-          alert("Контакт не указан");
-        }
-      }}
-    >
-      Написать в TG
-    </button>
+    <div className="flex items-center gap-3">
+      <span className="flex items-center gap-2 text-xs text-neutral-400">
+        <span className={`h-2 w-2 rounded-full ${online ? "bg-emerald-400" : "bg-neutral-600"}`} />
+        {online ? "Онлайн" : "Оффлайн"}
+      </span>
+      <button
+        className="rounded-full bg-white px-4 py-2 text-xs font-semibold text-black"
+        onClick={() => {
+          if (contact) {
+            window.open(contact, "_blank");
+          } else {
+            alert("Контакт не указан");
+          }
+        }}
+      >
+        Написать в TG
+      </button>
+    </div>
   );
 }
 
@@ -242,6 +301,13 @@ function normalizeContact(value: string): string {
   if (value.startsWith("@")) return `https://t.me/${value.slice(1)}`;
   if (value.includes("t.me/")) return `https://${value.replace(/^https?:\/\//, "")}`;
   return `https://t.me/${value}`;
+}
+
+function isSellerOnline(lastSeenAt: string | null): boolean {
+  if (!lastSeenAt) return false;
+  const last = new Date(lastSeenAt).getTime();
+  if (Number.isNaN(last)) return false;
+  return Date.now() - last < 5 * 60 * 1000;
 }
 
 function CreateListing({ catalog, initData }: { catalog: Game[]; initData: string }) {

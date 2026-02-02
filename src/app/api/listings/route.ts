@@ -59,7 +59,7 @@ export async function GET(req: Request) {
       game: true,
       server: true,
       category: true,
-      seller: { select: { username: true } },
+      seller: { select: { username: true, lastSeenAt: true } },
     },
     take: 50,
   });
@@ -104,11 +104,13 @@ export async function POST(req: Request) {
     update: {
       username: tgUser.username ?? null,
       displayName: [tgUser.first_name, tgUser.last_name].filter(Boolean).join(" ") || null,
+      lastSeenAt: new Date(),
     },
     create: {
       telegramId: String(tgUser.id),
       username: tgUser.username ?? null,
       displayName: [tgUser.first_name, tgUser.last_name].filter(Boolean).join(" ") || null,
+      lastSeenAt: new Date(),
     },
   });
 

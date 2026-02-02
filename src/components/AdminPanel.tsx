@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import TopNav from "@/components/TopNav";
 
 type Game = {
   id: string;
@@ -11,6 +12,7 @@ type Game = {
 };
 
 type CatalogResponse = { games: Game[] };
+
 type AuthInfo = {
   ok: boolean;
   error?: string;
@@ -101,22 +103,18 @@ export default function AdminPanel() {
   const [categoryParentId, setCategoryParentId] = useState("");
   const [tagName, setTagName] = useState("");
   const [tagGameId, setTagGameId] = useState("");
-
   const [initData, setInitData] = useState("");
 
   useEffect(() => {
     let attempts = 0;
     const read = () => {
       const value = getInitData();
-      const tg = (window as unknown as { Telegram?: { WebApp?: { ready?: () => void; initData?: string } } }).Telegram;
-      tg?.WebApp?.ready?.();
+      const tg = (window as unknown as { Telegram?: { WebApp?: { initData?: string } } }).Telegram;
       setDebugInfo({
         hasTelegram: Boolean(tg?.WebApp),
         initDataLength: (tg?.WebApp?.initData || "").length,
         urlHasData: hasInitDataInUrl(),
       });
-      const debugText = `Debug: tg=${tg?.WebApp ? "yes" : "no"} initData=${(tg?.WebApp?.initData || "").length} url=${hasInitDataInUrl() ? "yes" : "no"}`;
-      setStatus((prev) => (prev && !prev.startsWith("Debug:") ? prev : debugText));
       if (value) {
         setInitData(value);
         return;
@@ -178,11 +176,17 @@ export default function AdminPanel() {
   return (
     <div className="min-h-screen bg-neutral-950 text-neutral-100">
       <div className="mx-auto flex w-full max-w-5xl flex-col gap-8 px-5 py-10">
+        <TopNav />
         <header className="flex flex-col gap-2">
-          <p className="text-xs uppercase tracking-[0.3em] text-neutral-400">TradeBay Admin</p>
-          <h1 className="text-3xl font-semibold tracking-tight">Каталог и теги</h1>
+          <h2 className="text-2xl font-semibold tracking-tight">Админка каталога</h2>
           {!initData ? (
             <p className="text-sm text-amber-400">Откройте страницу из Telegram Web App для прав админа.</p>
+          ) : null}
+          {debugInfo ? (
+            <p className="text-xs text-neutral-500">
+              Telegram: {debugInfo.hasTelegram ? "yes" : "no"} · initData len: {debugInfo.initDataLength} · url data:{" "}
+              {debugInfo.urlHasData ? "yes" : "no"}
+            </p>
           ) : null}
           {authInfo?.ok ? (
             <p className="text-xs text-neutral-400">
@@ -219,9 +223,7 @@ export default function AdminPanel() {
               className="mt-3 w-full rounded-2xl border border-neutral-800 bg-neutral-950 px-4 py-3 text-sm outline-none focus:border-neutral-500"
               required
             />
-            <button className="mt-4 rounded-full bg-white px-4 py-2 text-xs font-semibold text-black">
-              Добавить
-            </button>
+            <button className="mt-4 rounded-full bg-white px-4 py-2 text-xs font-semibold text-black">Добавить</button>
           </form>
 
           <form
@@ -254,9 +256,7 @@ export default function AdminPanel() {
               className="mt-3 w-full rounded-2xl border border-neutral-800 bg-neutral-950 px-4 py-3 text-sm outline-none focus:border-neutral-500"
               required
             />
-            <button className="mt-4 rounded-full bg-white px-4 py-2 text-xs font-semibold text-black">
-              Добавить
-            </button>
+            <button className="mt-4 rounded-full bg-white px-4 py-2 text-xs font-semibold text-black">Добавить</button>
           </form>
 
           <form
@@ -308,9 +308,7 @@ export default function AdminPanel() {
                 </option>
               ))}
             </select>
-            <button className="mt-4 rounded-full bg-white px-4 py-2 text-xs font-semibold text-black">
-              Добавить
-            </button>
+            <button className="mt-4 rounded-full bg-white px-4 py-2 text-xs font-semibold text-black">Добавить</button>
           </form>
 
           <form
@@ -343,9 +341,7 @@ export default function AdminPanel() {
               className="mt-3 w-full rounded-2xl border border-neutral-800 bg-neutral-950 px-4 py-3 text-sm outline-none focus:border-neutral-500"
               required
             />
-            <button className="mt-4 rounded-full bg-white px-4 py-2 text-xs font-semibold text-black">
-              Добавить
-            </button>
+            <button className="mt-4 rounded-full bg-white px-4 py-2 text-xs font-semibold text-black">Добавить</button>
           </form>
         </section>
 
@@ -356,8 +352,7 @@ export default function AdminPanel() {
               <div key={game.id} className="rounded-2xl border border-neutral-800 bg-neutral-950 p-4">
                 <h3 className="text-sm font-semibold">{game.name}</h3>
                 <p className="mt-2 text-xs text-neutral-400">
-                  Серверов: {game.servers.length} · Категорий: {game.categories.length} · Тегов:{" "}
-                  {game.tags.length}
+                  Серверов: {game.servers.length} · Категорий: {game.categories.length} · Тегов: {game.tags.length}
                 </p>
                 <div className="mt-2 flex flex-wrap gap-2 text-xs text-neutral-500">
                   {game.categories.slice(0, 6).map((category) => (

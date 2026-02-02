@@ -14,6 +14,21 @@ export async function PATCH(req: Request, context: { params: Promise<{ id: strin
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  await prisma.user.upsert({
+    where: { telegramId: String(tgUser.id) },
+    update: {
+      username: tgUser.username ?? null,
+      displayName: [tgUser.first_name, tgUser.last_name].filter(Boolean).join(" ") || null,
+      lastSeenAt: new Date(),
+    },
+    create: {
+      telegramId: String(tgUser.id),
+      username: tgUser.username ?? null,
+      displayName: [tgUser.first_name, tgUser.last_name].filter(Boolean).join(" ") || null,
+      lastSeenAt: new Date(),
+    },
+  });
+
   const { id } = await context.params;
 
   const body = await req.json();

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getTelegramInitDataFromHeaders, isAdminTelegramId } from "@/lib/auth";
+import { prisma } from "@/lib/prisma";
 import { verifyTelegramInitData } from "@/lib/telegram";
 
 export async function GET() {
@@ -34,6 +35,21 @@ export async function GET() {
       { status: 401 },
     );
   }
+
+  await prisma.user.upsert({
+    where: { telegramId: String(verified.user.id) },
+    update: {
+      username: verified.user.username ?? null,
+      displayName: [verified.user.first_name, verified.user.last_name].filter(Boolean).join(" ") || null,
+      lastSeenAt: new Date(),
+    },
+    create: {
+      telegramId: String(verified.user.id),
+      username: verified.user.username ?? null,
+      displayName: [verified.user.first_name, verified.user.last_name].filter(Boolean).join(" ") || null,
+      lastSeenAt: new Date(),
+    },
+  });
 
   return NextResponse.json({
     ok: true,

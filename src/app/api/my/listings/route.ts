@@ -2,10 +2,9 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getTelegramInitDataFromHeaders, getTelegramUserFromInitData } from "@/lib/auth";
 
-export async function POST() {
+export async function GET() {
   const initData = await getTelegramInitDataFromHeaders();
   const tgUser = getTelegramUserFromInitData(initData);
-
   if (!tgUser) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
@@ -25,5 +24,17 @@ export async function POST() {
     },
   });
 
-  return NextResponse.json({ user });
+  const listings = await prisma.listing.findMany({
+    where: { sellerId: user.id },
+    orderBy: { createdAt: "desc" },
+    include: {
+      images: { select: { id: true } },
+      tags: { include: { tag: true } },
+      game: true,
+      server: true,
+      category: true,
+    },
+  });
+
+  return NextResponse.json({ listings });
 }
