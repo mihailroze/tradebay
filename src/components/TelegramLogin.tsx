@@ -8,7 +8,7 @@ type Props = {
 
 export default function TelegramLogin({ onSuccess }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const [status] = useState("");
+  const [status, setStatus] = useState("");
 
   useEffect(() => {
     const raw = (process.env.NEXT_PUBLIC_TELEGRAM_BOT_USERNAME || "").trim();
