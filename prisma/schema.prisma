@@ -27,7 +27,8 @@ model User {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  listings Listing[]
+  listings  Listing[]
+  favorites ListingFavorite[]
 }
 
 model Game {
@@ -107,9 +108,22 @@ model Listing {
   seller    User      @relation(fields: [sellerId], references: [id], onDelete: Cascade)
   images    Image[]
   tags      ListingTag[]
+  favorites ListingFavorite[]
 
   @@index([gameId, serverId, categoryId, status])
   @@index([title])
+}
+
+model ListingFavorite {
+  userId    String
+  listingId String
+  createdAt DateTime @default(now())
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  listing Listing @relation(fields: [listingId], references: [id], onDelete: Cascade)
+
+  @@id([userId, listingId])
+  @@index([listingId])
 }
 
 model ListingTag {
