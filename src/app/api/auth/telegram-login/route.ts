@@ -60,7 +60,10 @@ function safeReturnTo(raw: string | null, origin: string) {
 
 export async function GET(req: Request) {
   const url = new URL(req.url);
-  const payload = Object.fromEntries(url.searchParams.entries());
+  const allowedKeys = new Set(["id", "first_name", "last_name", "username", "photo_url", "auth_date", "hash"]);
+  const payload = Object.fromEntries(
+    Array.from(url.searchParams.entries()).filter(([key]) => allowedKeys.has(key)),
+  );
   if (!payload || !payload.hash) {
     return NextResponse.json({ ok: false, error: "invalid_payload" }, { status: 400 });
   }
@@ -84,7 +87,11 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: false, error: "invalid_payload" }, { status: 400 });
   }
 
-  const result = await handleLogin(payload as Record<string, unknown>);
+  const allowedKeys = new Set(["id", "first_name", "last_name", "username", "photo_url", "auth_date", "hash"]);
+  const sanitized = Object.fromEntries(
+    Object.entries(payload as Record<string, unknown>).filter(([key]) => allowedKeys.has(key)),
+  );
+  const result = await handleLogin(sanitized);
   if (!result.ok) {
     return NextResponse.json({ ok: false, error: result.error }, { status: result.status });
   }
