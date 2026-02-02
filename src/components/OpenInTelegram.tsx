@@ -26,6 +26,7 @@ export default function OpenInTelegram({ listingId }: Props) {
   const [link, setLink] = useState("");
   const [deepLink, setDeepLink] = useState("");
   const [showButton, setShowButton] = useState(false);
+  const [hint, setHint] = useState("");
 
   useEffect(() => {
     setLink(buildStartAppLink(listingId));
@@ -39,24 +40,24 @@ export default function OpenInTelegram({ listingId }: Props) {
     const ua = navigator.userAgent || "";
     const isTelegram = /Telegram/i.test(ua);
     if (isTelegram) {
-      if (deepLink) {
-        window.location.href = deepLink;
-      } else {
-        window.location.href = link;
-      }
-      return;
+      setHint("Нажмите, чтобы открыть приложение.");
+    } else {
+      setHint("Откройте эту ссылку в Telegram, чтобы перейти в приложение.");
     }
     setShowButton(true);
-  }, [link, deepLink]);
+  }, [link]);
 
   if (!link || !showButton) return null;
 
   return (
-    <a
-      href={deepLink || link}
-      className="inline-flex items-center justify-center rounded-full border border-neutral-700 px-4 py-2 text-xs font-semibold text-neutral-200 hover:border-white"
-    >
-      Открыть в Telegram
-    </a>
+    <div className="flex flex-col gap-2">
+      <p className="text-xs text-neutral-400">{hint}</p>
+      <a
+        href={deepLink || link}
+        className="inline-flex items-center justify-center rounded-full border border-neutral-700 px-4 py-2 text-xs font-semibold text-neutral-200 hover:border-white"
+      >
+        Открыть в Telegram
+      </a>
+    </div>
   );
 }
