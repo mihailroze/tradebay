@@ -2,7 +2,6 @@
 
 import type { FormEvent } from "react";
 import { useEffect, useState } from "react";
-import { useSearchParams } from "next/navigation";
 import TopNav from "@/components/TopNav";
 
 type Game = {
@@ -73,6 +72,15 @@ function readInitDataFromUrl(): string {
   }
 }
 
+function getListingIdFromUrl(): string {
+  try {
+    const searchParams = new URLSearchParams(window.location.search);
+    return searchParams.get("listingId") || "";
+  } catch {
+    return "";
+  }
+}
+
 function isSellerOnline(lastSeenAt: string | null | undefined): boolean {
   if (!lastSeenAt) return false;
   const last = new Date(lastSeenAt).getTime();
@@ -95,8 +103,7 @@ export default function Market() {
   const [creating, setCreating] = useState(false);
   const [status, setStatus] = useState("");
   const [initData, setInitData] = useState("");
-  const searchParams = useSearchParams();
-  const sharedListingId = searchParams.get("listingId") || "";
+  const [sharedListingId, setSharedListingId] = useState("");
   const [sharedListing, setSharedListing] = useState<Listing | null>(null);
   const [sharedError, setSharedError] = useState("");
 
@@ -114,6 +121,18 @@ export default function Market() {
       }
     };
     read();
+  }, []);
+
+  useEffect(() => {
+    const readListingId = () => {
+      const value = getListingIdFromUrl();
+      setSharedListingId(value);
+    };
+    readListingId();
+    if (typeof window === "undefined") return undefined;
+    const handler = () => readListingId();
+    window.addEventListener("popstate", handler);
+    return () => window.removeEventListener("popstate", handler);
   }, []);
 
   useEffect(() => {
