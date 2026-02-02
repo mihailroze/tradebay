@@ -2,6 +2,7 @@
 
 import type { FormEvent } from "react";
 import { useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import TopNav from "@/components/TopNav";
 
 type Game = {
@@ -21,6 +22,7 @@ type Listing = {
   currency?: string | null;
   tradeNote?: string | null;
   contactAlt?: string | null;
+  status?: "ACTIVE" | "SOLD" | "HIDDEN";
   images: { id: string }[];
   tags: { tag: { id: string; name: string } }[];
   game?: { id: string; name: string };
@@ -93,6 +95,10 @@ export default function Market() {
   const [creating, setCreating] = useState(false);
   const [status, setStatus] = useState("");
   const [initData, setInitData] = useState("");
+  const searchParams = useSearchParams();
+  const sharedListingId = searchParams.get("listingId") || "";
+  const [sharedListing, setSharedListing] = useState<Listing | null>(null);
+  const [sharedError, setSharedError] = useState("");
 
   useEffect(() => {
     let attempts = 0;
@@ -140,6 +146,31 @@ export default function Market() {
   }, [search, gameId, serverId, categoryId, tagId, type, sort, page, initData]);
 
   useEffect(() => {
+    if (!sharedListingId) {
+      setSharedListing(null);
+      setSharedError("");
+      return;
+    }
+    const controller = new AbortController();
+    fetch(`/api/listings/${sharedListingId}`, {
+      headers: initData ? { "x-telegram-init-data": initData } : undefined,
+      signal: controller.signal,
+    })
+      .then((res) => (res.ok ? res.json() : Promise.reject(res)))
+      .then((data: { listing?: Listing }) => {
+        setSharedListing(data.listing ?? null);
+        setSharedError(data.listing ? "" : "Лот не найден или больше недоступен.");
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) {
+          setSharedListing(null);
+          setSharedError("Лот не найден или больше недоступен.");
+        }
+      });
+    return () => controller.abort();
+  }, [sharedListingId, initData]);
+
+  useEffect(() => {
     if (!initData) return;
     fetch("/api/auth/me", {
       headers: {
@@ -176,6 +207,28 @@ export default function Market() {
   };
 
   const resetPage = () => setPage(1);
+  const clearShared = () => {
+    if (typeof window === "undefined") return;
+    const url = new URL(window.location.href);
+    url.searchParams.delete("listingId");
+    window.history.replaceState({}, "", url.toString());
+    setSharedListing(null);
+    setSharedError("");
+  };
+  const shareListing = (listing: Listing) => {
+    const shareUrl = buildShareUrl(listing.id);
+    const shareText = buildShareText(listing);
+    const shareLink = `https://t.me/share/url?url=${encodeURIComponent(shareUrl)}${
+      shareText ? `&text=${encodeURIComponent(shareText)}` : ""
+    }`;
+    const tg = (window as unknown as { Telegram?: { WebApp?: { openTelegramLink?: (url: string) => void } } })
+      .Telegram?.WebApp;
+    if (tg?.openTelegramLink) {
+      tg.openTelegramLink(shareLink);
+    } else if (typeof window !== "undefined") {
+      window.open(shareLink, "_blank");
+    }
+  };
 
   return (
     <div className="min-h-screen bg-neutral-950 text-neutral-100">
@@ -301,6 +354,81 @@ export default function Market() {
 
         {creating ? <CreateListing catalog={catalog} initData={initData} /> : null}
 
+        {sharedListing ? (
+          <div className="flex flex-col gap-3">
+            <div className="flex items-center justify-between text-xs uppercase tracking-[0.3em] text-neutral-500">
+              <span>Лот из ссылки</span>
+              <button className="rounded-full border border-neutral-800 px-3 py-1 text-[11px] hover:border-white" onClick={clearShared}>
+                Скрыть
+              </button>
+            </div>
+            <article className="rounded-3xl border border-amber-400/70 bg-amber-500/10 p-5">
+              {sharedListing.images[0] ? (
+                <img
+                  src={`/api/images/${sharedListing.images[0].id}`}
+                  alt={sharedListing.title}
+                  className="mb-4 h-40 w-full rounded-2xl object-cover"
+                  loading="lazy"
+                />
+              ) : null}
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <h3 className="text-lg font-semibold">{sharedListing.title}</h3>
+                  <p className="text-sm text-neutral-300">
+                    {sharedListing.game?.name}
+                    {sharedListing.server?.name ? ` В· ${sharedListing.server.name}` : ""}
+                    {sharedListing.category?.name ? ` В· ${sharedListing.category.name}` : ""}
+                  </p>
+                </div>
+                <div className="flex flex-wrap items-center justify-end gap-2">
+                  <button
+                    className={`rounded-full border px-2 py-1 text-xs ${
+                      sharedListing.isFavorite ? "border-amber-400 text-amber-300" : "border-neutral-700 text-neutral-300"
+                    }`}
+                    onClick={() => toggleFavorite(sharedListing.id, !sharedListing.isFavorite)}
+                  >
+                    ★
+                  </button>
+                  <button
+                    className="rounded-full border border-neutral-700 px-3 py-1 text-xs text-neutral-300 hover:border-white"
+                    onClick={() => shareListing(sharedListing)}
+                  >
+                    Поделиться
+                  </button>
+                  <span className="rounded-full border border-neutral-700 px-3 py-1 text-xs uppercase tracking-wider">
+                    {sharedListing.type === "SALE" ? "Продажа" : "Обмен"}
+                  </span>
+                  {sharedListing.status && sharedListing.status !== "ACTIVE" ? (
+                    <span className="rounded-full border border-amber-400/70 px-3 py-1 text-xs uppercase tracking-wider text-amber-200">
+                      {sharedListing.status === "SOLD" ? "Продан" : "Скрыт"}
+                    </span>
+                  ) : null}
+                </div>
+              </div>
+              {sharedListing.description ? <p className="mt-3 text-sm text-neutral-200">{sharedListing.description}</p> : null}
+              <div className="mt-4 flex flex-wrap gap-2 text-xs text-neutral-300">
+                {sharedListing.tags.map((tag) => (
+                  <span key={tag.tag.id} className="rounded-full border border-neutral-800 px-3 py-1">
+                    #{tag.tag.name}
+                  </span>
+                ))}
+              </div>
+              <div className="mt-4 flex items-center justify-between">
+                <div className="text-sm text-neutral-100">
+                  {sharedListing.type === "SALE"
+                    ? `Цена: ${sharedListing.price ?? "-"} ${sharedListing.currency ?? ""}`
+                    : `Обмен: ${sharedListing.tradeNote ?? "-"}`}
+                </div>
+                <ContactButton listing={sharedListing} />
+              </div>
+            </article>
+          </div>
+        ) : sharedError ? (
+          <div className="rounded-3xl border border-neutral-800 bg-neutral-900 px-5 py-4 text-sm text-neutral-300">
+            {sharedError}
+          </div>
+        ) : null}
+
         <section className="grid gap-4 md:grid-cols-2">
           {listings.map((listing) => (
             <article key={listing.id} className="rounded-3xl border border-neutral-800 bg-neutral-900 p-5">
@@ -321,7 +449,7 @@ export default function Market() {
                     {listing.category?.name ? ` · ${listing.category.name}` : ""}
                   </p>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center justify-end gap-2">
                   <button
                     className={`rounded-full border px-2 py-1 text-xs ${
                       listing.isFavorite ? "border-amber-400 text-amber-300" : "border-neutral-700 text-neutral-400"
@@ -330,9 +458,20 @@ export default function Market() {
                   >
                     ★
                   </button>
+                  <button
+                    className="rounded-full border border-neutral-700 px-3 py-1 text-xs text-neutral-300 hover:border-white"
+                    onClick={() => shareListing(listing)}
+                  >
+                    Поделиться
+                  </button>
                   <span className="rounded-full border border-neutral-700 px-3 py-1 text-xs uppercase tracking-wider">
                     {listing.type === "SALE" ? "Продажа" : "Обмен"}
                   </span>
+                  {listing.status && listing.status !== "ACTIVE" ? (
+                    <span className="rounded-full border border-amber-400/70 px-3 py-1 text-xs uppercase tracking-wider text-amber-200">
+                      {listing.status === "SOLD" ? "Продан" : "Скрыт"}
+                    </span>
+                  ) : null}
                 </div>
               </div>
               {listing.description ? <p className="mt-3 text-sm text-neutral-200">{listing.description}</p> : null}
@@ -414,6 +553,22 @@ function normalizeContact(value: string): string {
   if (value.startsWith("@")) return `https://t.me/${value.slice(1)}`;
   if (value.includes("t.me/")) return `https://${value.replace(/^https?:\/\//, "")}`;
   return `https://t.me/${value}`;
+}
+
+function buildShareUrl(listingId: string): string {
+  if (typeof window === "undefined") return "";
+  const url = new URL(window.location.origin);
+  url.searchParams.set("listingId", listingId);
+  return url.toString();
+}
+
+function buildShareText(listing: Listing): string {
+  const detail =
+    listing.type === "SALE"
+      ? `Цена: ${listing.price ?? "-"}${listing.currency ? ` ${listing.currency}` : ""}`
+      : `Обмен: ${listing.tradeNote ?? "-"}`;
+  const raw = `${listing.title} · ${detail}`.trim();
+  return raw.length > 140 ? `${raw.slice(0, 137)}...` : raw;
 }
 
 function CreateListing({ catalog, initData }: { catalog: Game[]; initData: string }) {

@@ -57,6 +57,22 @@ function readInitDataFromUrl(): string {
   }
 }
 
+function buildShareUrl(listingId: string): string {
+  if (typeof window === "undefined") return "";
+  const url = new URL(window.location.origin);
+  url.searchParams.set("listingId", listingId);
+  return url.toString();
+}
+
+function buildShareText(listing: Listing): string {
+  const detail =
+    listing.type === "SALE"
+      ? `Цена: ${listing.price ?? "-"}${listing.currency ? ` ${listing.currency}` : ""}`
+      : `Обмен: ${listing.tradeNote ?? "-"}`;
+  const raw = `${listing.title} · ${detail}`.trim();
+  return raw.length > 140 ? `${raw.slice(0, 137)}...` : raw;
+}
+
 export default function MyListings() {
   const [initData, setInitData] = useState("");
   const [listings, setListings] = useState<Listing[]>([]);
@@ -121,6 +137,21 @@ export default function MyListings() {
     loadListings();
   };
 
+  const shareListing = (listing: Listing) => {
+    const shareUrl = buildShareUrl(listing.id);
+    const shareText = buildShareText(listing);
+    const shareLink = `https://t.me/share/url?url=${encodeURIComponent(shareUrl)}${
+      shareText ? `&text=${encodeURIComponent(shareText)}` : ""
+    }`;
+    const tg = (window as unknown as { Telegram?: { WebApp?: { openTelegramLink?: (url: string) => void } } })
+      .Telegram?.WebApp;
+    if (tg?.openTelegramLink) {
+      tg.openTelegramLink(shareLink);
+    } else if (typeof window !== "undefined") {
+      window.open(shareLink, "_blank");
+    }
+  };
+
   return (
     <div className="min-h-screen bg-neutral-950 text-neutral-100">
       <div className="mx-auto flex w-full max-w-6xl flex-col gap-10 px-5 py-10">
@@ -173,6 +204,12 @@ export default function MyListings() {
                     : `Обмен: ${listing.tradeNote ?? "-"}`}
                 </div>
                 <div className="flex flex-wrap gap-2">
+                  <button
+                    className="rounded-full border border-neutral-700 px-3 py-1 text-xs text-neutral-300 hover:border-white"
+                    onClick={() => shareListing(listing)}
+                  >
+                    Поделиться
+                  </button>
                   <button
                     className="rounded-full border border-neutral-700 px-3 py-1 text-xs hover:border-white"
                     onClick={() => updateStatus(listing.id, "ACTIVE")}

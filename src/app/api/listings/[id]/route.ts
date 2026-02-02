@@ -7,6 +7,59 @@ const schema = z.object({
   status: z.enum(["ACTIVE", "SOLD", "HIDDEN"]),
 });
 
+export async function GET(_req: Request, context: { params: Promise<{ id: string }> }) {
+  const { id } = await context.params;
+  const listing = await prisma.listing.findUnique({
+    where: { id },
+    include: {
+      images: { select: { id: true } },
+      tags: { include: { tag: true } },
+      game: true,
+      server: true,
+      category: true,
+      seller: { select: { id: true, telegramId: true, username: true, lastSeenAt: true } },
+    },
+  });
+
+  if (!listing) {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+
+  const initData = await getTelegramInitDataFromHeaders();
+  const tgUser = getTelegramUserFromInitData(initData);
+  const isAdmin = tgUser ? isAdminTelegramId(tgUser.id) : false;
+  const isOwner = tgUser ? listing.seller?.telegramId === String(tgUser.id) : false;
+
+  if (listing.status !== "ACTIVE" && !isAdmin && !isOwner) {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+
+  let isFavorite = false;
+  if (tgUser) {
+    const user = await prisma.user.findUnique({
+      where: { telegramId: String(tgUser.id) },
+      select: { id: true },
+    });
+    if (user) {
+      const favorite = await prisma.listingFavorite.findUnique({
+        where: { userId_listingId: { userId: user.id, listingId: listing.id } },
+        select: { listingId: true },
+      });
+      isFavorite = Boolean(favorite);
+    }
+  }
+
+  const { telegramId, ...seller } = listing.seller ?? { telegramId: null };
+
+  return NextResponse.json({
+    listing: {
+      ...listing,
+      seller,
+      isFavorite,
+    },
+  });
+}
+
 export async function PATCH(req: Request, context: { params: Promise<{ id: string }> }) {
   const initData = await getTelegramInitDataFromHeaders();
   const tgUser = getTelegramUserFromInitData(initData);

@@ -2,16 +2,84 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useEffect, useState } from "react";
 
-const links = [
+const baseLinks = [
   { href: "/", label: "Рынок" },
   { href: "/my", label: "Мои лоты" },
   { href: "/favorites", label: "Избранное" },
-  { href: "/admin", label: "Админка" },
 ];
+
+function getInitData(): string {
+  if (typeof window === "undefined") return "";
+  const tg = (window as unknown as { Telegram?: { WebApp?: { initData?: string; ready?: () => void } } }).Telegram;
+  tg?.WebApp?.ready?.();
+  const fromTelegram = tg?.WebApp?.initData || "";
+  const fromUrl = readInitDataFromUrl();
+  const cached = window.sessionStorage.getItem("tg_init_data") || "";
+  const value = fromTelegram || fromUrl || cached;
+  if (value) {
+    window.sessionStorage.setItem("tg_init_data", value);
+  }
+  return value;
+}
+
+function readInitDataFromUrl(): string {
+  try {
+    const searchParams = new URLSearchParams(window.location.search);
+    const hash = window.location.hash.replace(/^#/, "");
+    const hashParams = new URLSearchParams(hash);
+    const raw =
+      searchParams.get("tgWebAppData") ||
+      searchParams.get("initData") ||
+      hashParams.get("tgWebAppData") ||
+      hashParams.get("initData") ||
+      "";
+    if (!raw) return "";
+    try {
+      return decodeURIComponent(raw);
+    } catch {
+      return raw;
+    }
+  } catch {
+    return "";
+  }
+}
 
 export default function TopNav() {
   const pathname = usePathname();
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [initData, setInitData] = useState("");
+
+  useEffect(() => {
+    let attempts = 0;
+    const read = () => {
+      const value = getInitData();
+      if (value) {
+        setInitData(value);
+        return;
+      }
+      if (attempts < 5) {
+        attempts += 1;
+        setTimeout(read, 300);
+      }
+    };
+    read();
+  }, []);
+
+  useEffect(() => {
+    if (!initData) return;
+    fetch("/api/auth/me", {
+      headers: {
+        "x-telegram-init-data": initData,
+      },
+    })
+      .then((res) => res.json())
+      .then((data: { isAdmin?: boolean }) => setIsAdmin(Boolean(data.isAdmin)))
+      .catch(() => setIsAdmin(false));
+  }, [initData]);
+
+  const links = isAdmin ? [...baseLinks, { href: "/admin", label: "Админка" }] : baseLinks;
 
   return (
     <nav className="flex flex-wrap items-center justify-between gap-3 rounded-3xl border border-neutral-800 bg-neutral-900 px-5 py-3">
