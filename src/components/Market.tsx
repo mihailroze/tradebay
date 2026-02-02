@@ -27,10 +27,13 @@ type Listing = {
   server?: { id: string; name: string } | null;
   category?: { id: string; name: string } | null;
   seller?: { username?: string | null; lastSeenAt?: string | null };
+  isFavorite?: boolean;
 };
 
 type CatalogResponse = { games: Game[] };
-type ListingsResponse = { listings: Listing[] };
+type ListingsResponse = { listings: Listing[]; total: number; page: number; pageSize: number };
+
+const PAGE_SIZE = 20;
 
 function getInitData(): string {
   if (typeof window === "undefined") return "";
@@ -68,17 +71,27 @@ function readInitDataFromUrl(): string {
   }
 }
 
+function isSellerOnline(lastSeenAt: string | null | undefined): boolean {
+  if (!lastSeenAt) return false;
+  const last = new Date(lastSeenAt).getTime();
+  if (Number.isNaN(last)) return false;
+  return Date.now() - last < 5 * 60 * 1000;
+}
+
 export default function Market() {
   const [catalog, setCatalog] = useState<Game[]>([]);
   const [listings, setListings] = useState<Listing[]>([]);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
   const [search, setSearch] = useState("");
   const [gameId, setGameId] = useState("");
   const [serverId, setServerId] = useState("");
   const [categoryId, setCategoryId] = useState("");
   const [tagId, setTagId] = useState("");
   const [type, setType] = useState("");
+  const [sort, setSort] = useState("NEWEST");
   const [creating, setCreating] = useState(false);
-
+  const [status, setStatus] = useState("");
   const [initData, setInitData] = useState("");
 
   useEffect(() => {
@@ -112,11 +125,19 @@ export default function Market() {
     if (categoryId) params.set("categoryId", categoryId);
     if (tagId) params.set("tagId", tagId);
     if (type) params.set("type", type);
-    fetch(`/api/listings?${params.toString()}`)
+    if (sort) params.set("sort", sort);
+    params.set("page", String(page));
+    params.set("pageSize", String(PAGE_SIZE));
+    fetch(`/api/listings?${params.toString()}`, {
+      headers: initData ? { "x-telegram-init-data": initData } : undefined,
+    })
       .then((res) => res.json())
-      .then((data: ListingsResponse) => setListings(data.listings))
+      .then((data: ListingsResponse) => {
+        setListings(data.listings || []);
+        setTotal(data.total || 0);
+      })
       .catch(() => setListings([]));
-  }, [search, gameId, serverId, categoryId, tagId, type]);
+  }, [search, gameId, serverId, categoryId, tagId, type, sort, page, initData]);
 
   useEffect(() => {
     if (!initData) return;
@@ -131,6 +152,30 @@ export default function Market() {
   const servers = game?.servers ?? [];
   const categories = game?.categories ?? [];
   const tags = game?.tags ?? [];
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+
+  const toggleFavorite = async (listingId: string, next: boolean) => {
+    if (!initData) {
+      setStatus("Откройте страницу в Telegram Web App.");
+      return;
+    }
+    const res = await fetch(`/api/favorites/${listingId}`, {
+      method: next ? "POST" : "DELETE",
+      headers: {
+        "x-telegram-init-data": initData,
+      },
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      setStatus(`Ошибка: ${err.error?.message || err.error || res.statusText}`);
+      return;
+    }
+    setListings((prev) =>
+      prev.map((item) => (item.id === listingId ? { ...item, isFavorite: next } : item)),
+    );
+  };
+
+  const resetPage = () => setPage(1);
 
   return (
     <div className="min-h-screen bg-neutral-950 text-neutral-100">
@@ -139,17 +184,23 @@ export default function Market() {
         <header className="flex flex-col gap-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <h2 className="text-2xl font-semibold tracking-tight">Рынок игровых лотов</h2>
-            <button
-              className="rounded-full border border-neutral-700 px-4 py-2 text-sm hover:border-white hover:text-white"
-              onClick={() => setCreating((v) => !v)}
-            >
-              {creating ? "Скрыть форму" : "Создать лот"}
-            </button>
+            <div className="flex items-center gap-3">
+              <span className="text-xs text-neutral-400">{status}</span>
+              <button
+                className="rounded-full border border-neutral-700 px-4 py-2 text-sm hover:border-white hover:text-white"
+                onClick={() => setCreating((v) => !v)}
+              >
+                {creating ? "Скрыть форму" : "Создать лот"}
+              </button>
+            </div>
           </div>
           <div className="grid gap-3 md:grid-cols-3">
             <input
               value={search}
-              onChange={(e) => setSearch(e.target.value)}
+              onChange={(e) => {
+                setSearch(e.target.value);
+                resetPage();
+              }}
               placeholder="Поиск по названию или описанию"
               className="w-full rounded-2xl border border-neutral-800 bg-neutral-900 px-4 py-3 text-sm outline-none focus:border-neutral-500"
             />
@@ -160,19 +211,23 @@ export default function Market() {
                 setServerId("");
                 setCategoryId("");
                 setTagId("");
+                resetPage();
               }}
               className="w-full rounded-2xl border border-neutral-800 bg-neutral-900 px-4 py-3 text-sm outline-none focus:border-neutral-500"
             >
               <option value="">Все игры</option>
-              {catalog.map((game) => (
-                <option key={game.id} value={game.id}>
-                  {game.name}
+              {catalog.map((gameItem) => (
+                <option key={gameItem.id} value={gameItem.id}>
+                  {gameItem.name}
                 </option>
               ))}
             </select>
             <select
               value={type}
-              onChange={(e) => setType(e.target.value)}
+              onChange={(e) => {
+                setType(e.target.value);
+                resetPage();
+              }}
               className="w-full rounded-2xl border border-neutral-800 bg-neutral-900 px-4 py-3 text-sm outline-none focus:border-neutral-500"
             >
               <option value="">Все типы</option>
@@ -181,7 +236,10 @@ export default function Market() {
             </select>
             <select
               value={serverId}
-              onChange={(e) => setServerId(e.target.value)}
+              onChange={(e) => {
+                setServerId(e.target.value);
+                resetPage();
+              }}
               className="w-full rounded-2xl border border-neutral-800 bg-neutral-900 px-4 py-3 text-sm outline-none focus:border-neutral-500"
             >
               <option value="">Все серверы</option>
@@ -193,7 +251,10 @@ export default function Market() {
             </select>
             <select
               value={categoryId}
-              onChange={(e) => setCategoryId(e.target.value)}
+              onChange={(e) => {
+                setCategoryId(e.target.value);
+                resetPage();
+              }}
               className="w-full rounded-2xl border border-neutral-800 bg-neutral-900 px-4 py-3 text-sm outline-none focus:border-neutral-500"
             >
               <option value="">Все категории</option>
@@ -205,7 +266,10 @@ export default function Market() {
             </select>
             <select
               value={tagId}
-              onChange={(e) => setTagId(e.target.value)}
+              onChange={(e) => {
+                setTagId(e.target.value);
+                resetPage();
+              }}
               className="w-full rounded-2xl border border-neutral-800 bg-neutral-900 px-4 py-3 text-sm outline-none focus:border-neutral-500"
             >
               <option value="">Все теги</option>
@@ -214,6 +278,23 @@ export default function Market() {
                   #{tag.name}
                 </option>
               ))}
+            </select>
+            <select
+              value={sort}
+              onChange={(e) => {
+                const nextSort = e.target.value;
+                setSort(nextSort);
+                if ((nextSort === "PRICE_ASC" || nextSort === "PRICE_DESC") && type !== "SALE") {
+                  setType("SALE");
+                }
+                resetPage();
+              }}
+              className="w-full rounded-2xl border border-neutral-800 bg-neutral-900 px-4 py-3 text-sm outline-none focus:border-neutral-500"
+            >
+              <option value="NEWEST">Сначала новые</option>
+              <option value="OLDEST">Сначала старые</option>
+              <option value="PRICE_ASC">Цена по возрастанию (только продажа)</option>
+              <option value="PRICE_DESC">Цена по убыванию (только продажа)</option>
             </select>
           </div>
         </header>
@@ -240,9 +321,19 @@ export default function Market() {
                     {listing.category?.name ? ` · ${listing.category.name}` : ""}
                   </p>
                 </div>
-                <span className="rounded-full border border-neutral-700 px-3 py-1 text-xs uppercase tracking-wider">
-                  {listing.type === "SALE" ? "Продажа" : "Обмен"}
-                </span>
+                <div className="flex items-center gap-2">
+                  <button
+                    className={`rounded-full border px-2 py-1 text-xs ${
+                      listing.isFavorite ? "border-amber-400 text-amber-300" : "border-neutral-700 text-neutral-400"
+                    }`}
+                    onClick={() => toggleFavorite(listing.id, !listing.isFavorite)}
+                  >
+                    ★
+                  </button>
+                  <span className="rounded-full border border-neutral-700 px-3 py-1 text-xs uppercase tracking-wider">
+                    {listing.type === "SALE" ? "Продажа" : "Обмен"}
+                  </span>
+                </div>
               </div>
               {listing.description ? <p className="mt-3 text-sm text-neutral-200">{listing.description}</p> : null}
               <div className="mt-4 flex flex-wrap gap-2 text-xs text-neutral-400">
@@ -263,6 +354,28 @@ export default function Market() {
             </article>
           ))}
         </section>
+
+        <div className="flex items-center justify-between text-xs text-neutral-400">
+          <span>
+            Страница {page} из {totalPages} · Всего {total}
+          </span>
+          <div className="flex gap-2">
+            <button
+              className="rounded-full border border-neutral-700 px-3 py-1 hover:border-white disabled:opacity-50"
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+              disabled={page <= 1}
+            >
+              Назад
+            </button>
+            <button
+              className="rounded-full border border-neutral-700 px-3 py-1 hover:border-white disabled:opacity-50"
+              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+              disabled={page >= totalPages}
+            >
+              Вперед
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -301,13 +414,6 @@ function normalizeContact(value: string): string {
   if (value.startsWith("@")) return `https://t.me/${value.slice(1)}`;
   if (value.includes("t.me/")) return `https://${value.replace(/^https?:\/\//, "")}`;
   return `https://t.me/${value}`;
-}
-
-function isSellerOnline(lastSeenAt: string | null): boolean {
-  if (!lastSeenAt) return false;
-  const last = new Date(lastSeenAt).getTime();
-  if (Number.isNaN(last)) return false;
-  return Date.now() - last < 5 * 60 * 1000;
 }
 
 function CreateListing({ catalog, initData }: { catalog: Game[]; initData: string }) {

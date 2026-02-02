@@ -35,4 +35,4 @@ npm run dev
 - Admin endpoints require Telegram initData + user ID in `TELEGRAM_ADMIN_IDS`.
 - Public catalog is editable via admin API endpoints.
 - Images are stored in Postgres (up to 5 images, 2MB each by default).
-- Admin UI доступна по `/admin` (открывать из Telegram Web App).
+- UI routes: `/` (рынок), `/my` (мои лоты), `/favorites` (избранное), `/admin` (админка). Открывать из Telegram Web App.

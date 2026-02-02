@@ -30,41 +30,86 @@ export async function GET(req: Request) {
   const categoryId = searchParams.get("categoryId") || undefined;
   const tagId = searchParams.get("tagId") || undefined;
   const type = searchParams.get("type") || undefined;
+  const sort = (searchParams.get("sort") || "NEWEST").toUpperCase();
+  const pageRaw = Number(searchParams.get("page"));
+  const pageSizeRaw = Number(searchParams.get("pageSize"));
+  const page = Number.isFinite(pageRaw) ? Math.max(1, pageRaw) : 1;
+  const pageSize = Number.isFinite(pageSizeRaw) ? Math.min(50, Math.max(10, pageSizeRaw)) : 20;
 
-  const listings = await prisma.listing.findMany({
-    where: {
-      status: "ACTIVE",
-      gameId,
-      serverId,
-      categoryId,
-      type: type === "SALE" || type === "TRADE" ? type : undefined,
-      ...(search
-        ? {
-            OR: [
-              { title: { contains: search, mode: "insensitive" } },
-              { description: { contains: search, mode: "insensitive" } },
-            ],
-          }
-        : {}),
-      ...(tagId
-        ? {
-            tags: { some: { tagId } },
-          }
-        : {}),
-    },
-    orderBy: { createdAt: "desc" },
-    include: {
-      images: { select: { id: true } },
-      tags: { include: { tag: true } },
-      game: true,
-      server: true,
-      category: true,
-      seller: { select: { username: true, lastSeenAt: true } },
-    },
-    take: 50,
-  });
+  const where = {
+    status: "ACTIVE" as const,
+    gameId,
+    serverId,
+    categoryId,
+    type: type === "SALE" || type === "TRADE" ? type : undefined,
+    ...(search
+      ? {
+          OR: [
+            { title: { contains: search, mode: "insensitive" } },
+            { description: { contains: search, mode: "insensitive" } },
+          ],
+        }
+      : {}),
+    ...(tagId
+      ? {
+          tags: { some: { tagId } },
+        }
+      : {}),
+  };
 
-  return NextResponse.json({ listings });
+  const orderBy =
+    sort === "PRICE_ASC"
+      ? [{ price: "asc" as const }, { createdAt: "desc" as const }]
+      : sort === "PRICE_DESC"
+        ? [{ price: "desc" as const }, { createdAt: "desc" as const }]
+        : sort === "OLDEST"
+          ? [{ createdAt: "asc" as const }]
+          : [{ createdAt: "desc" as const }];
+
+  const [total, listings] = await prisma.$transaction([
+    prisma.listing.count({ where }),
+    prisma.listing.findMany({
+      where,
+      orderBy,
+      include: {
+        images: { select: { id: true } },
+        tags: { include: { tag: true } },
+        game: true,
+        server: true,
+        category: true,
+        seller: { select: { username: true, lastSeenAt: true } },
+      },
+      take: pageSize,
+      skip: (page - 1) * pageSize,
+    }),
+  ]);
+
+  const initData = await getTelegramInitDataFromHeaders();
+  const tgUser = getTelegramUserFromInitData(initData);
+  let favoriteIds = new Set<string>();
+  if (tgUser && listings.length) {
+    const user = await prisma.user.findUnique({
+      where: { telegramId: String(tgUser.id) },
+      select: { id: true },
+    });
+    if (user) {
+      const favorites = await prisma.listingFavorite.findMany({
+        where: {
+          userId: user.id,
+          listingId: { in: listings.map((listing) => listing.id) },
+        },
+        select: { listingId: true },
+      });
+      favoriteIds = new Set(favorites.map((fav) => fav.listingId));
+    }
+  }
+
+  const listingsWithFavorite = listings.map((listing) => ({
+    ...listing,
+    isFavorite: favoriteIds.has(listing.id),
+  }));
+
+  return NextResponse.json({ listings: listingsWithFavorite, total, page, pageSize });
 }
 
 export async function POST(req: Request) {
@@ -180,16 +225,16 @@ async function parseFormPayload(req: Request) {
 async function buildImages(files: File[]) {
   if (!files.length) return [];
   if (files.length > MAX_IMAGES) {
-    throw new Error(`Максимум ${MAX_IMAGES} изображений`);
+    throw new Error(`Maximum ${MAX_IMAGES} images allowed`);
   }
 
   const results = [];
   for (const file of files) {
     if (!ALLOWED_TYPES.includes(file.type)) {
-      throw new Error("Поддерживаются только JPG, PNG, WEBP");
+      throw new Error("Only JPG, PNG, WEBP are allowed");
     }
     if (file.size > MAX_IMAGE_SIZE) {
-      throw new Error(`Размер изображения не более ${Math.floor(MAX_IMAGE_SIZE / (1024 * 1024))}MB`);
+      throw new Error(`Image size must be <= ${Math.floor(MAX_IMAGE_SIZE / (1024 * 1024))}MB`);
     }
     const buffer = Buffer.from(await file.arrayBuffer());
     results.push({
