@@ -48,14 +48,25 @@ async function handleLogin(payload: Record<string, unknown>) {
   };
 }
 
-function safeReturnTo(raw: string | null, origin: string) {
-  if (!raw) return origin;
+function getAllowedOrigin(requestOrigin: string) {
+  const envBase = normalizeEnvValue(process.env.NEXT_PUBLIC_SITE_URL);
+  if (!envBase) return requestOrigin;
   try {
-    const url = new URL(raw, origin);
-    if (url.origin !== origin) return origin;
+    return new URL(envBase).origin;
+  } catch {
+    return requestOrigin;
+  }
+}
+
+function safeReturnTo(raw: string | null, requestOrigin: string) {
+  const allowedOrigin = getAllowedOrigin(requestOrigin);
+  if (!raw) return allowedOrigin;
+  try {
+    const url = new URL(raw, allowedOrigin);
+    if (url.origin !== allowedOrigin) return allowedOrigin;
     return url.toString();
   } catch {
-    return origin;
+    return allowedOrigin;
   }
 }
 
