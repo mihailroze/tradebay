@@ -51,6 +51,10 @@ export default function TopNav() {
   const pathname = usePathname();
   const [isAdmin, setIsAdmin] = useState(false);
   const [isAuthed, setIsAuthed] = useState(false);
+  const [authSource, setAuthSource] = useState<"webapp" | "session" | "">("");
+  const [authUser, setAuthUser] = useState<{ username?: string | null; firstName?: string | null; lastName?: string | null } | null>(
+    null,
+  );
   const [initData, setInitData] = useState("");
   const [authTick, setAuthTick] = useState(0);
 
@@ -74,13 +78,17 @@ export default function TopNav() {
     const headers = initData ? { "x-telegram-init-data": initData } : undefined;
     fetch("/api/auth/me", { headers })
       .then((res) => res.json())
-      .then((data: { ok?: boolean; isAdmin?: boolean }) => {
+      .then((data: { ok?: boolean; isAdmin?: boolean; source?: "webapp" | "session"; user?: { username?: string | null; firstName?: string | null; lastName?: string | null } }) => {
         setIsAdmin(Boolean(data.isAdmin));
         setIsAuthed(Boolean(data.ok));
+        setAuthSource(data.source ?? "");
+        setAuthUser(data.user ?? null);
       })
       .catch(() => {
         setIsAdmin(false);
         setIsAuthed(false);
+        setAuthSource("");
+        setAuthUser(null);
       });
   }, [initData, authTick]);
 
@@ -107,6 +115,29 @@ export default function TopNav() {
             </Link>
           );
         })}
+        {isAuthed ? (
+          <div className="flex flex-wrap items-center gap-2 text-xs text-neutral-400">
+            <span>
+              Вы вошли как{" "}
+              <span className="text-neutral-200">
+                {authUser?.username
+                  ? `@${authUser.username}`
+                  : [authUser?.firstName, authUser?.lastName].filter(Boolean).join(" ") || "пользователь"}
+              </span>
+            </span>
+            {authSource === "session" ? (
+              <button
+                className="rounded-full border border-neutral-700 px-3 py-1 text-xs text-neutral-300 hover:border-white"
+                onClick={async () => {
+                  await fetch("/api/auth/logout", { method: "POST" });
+                  setAuthTick((v) => v + 1);
+                }}
+              >
+                Выйти
+              </button>
+            ) : null}
+          </div>
+        ) : null}
         {!initData && !isAuthed ? <TelegramLogin onSuccess={() => setAuthTick((v) => v + 1)} /> : null}
       </div>
     </nav>
