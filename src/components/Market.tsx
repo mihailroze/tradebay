@@ -250,6 +250,33 @@ export default function Market() {
     );
   };
 
+  const buyListing = async (listingId: string) => {
+    if (!initData && !hasAuth) {
+      setStatus("Login via Telegram to buy.");
+      return;
+    }
+    setStatus("Processing purchase...");
+    const res = await fetch(`/api/listings/${listingId}/purchase`, {
+      method: "POST",
+      headers: initData ? { "x-telegram-init-data": initData } : undefined,
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      setStatus(data.error || "Purchase failed");
+      return;
+    }
+    setStatus("Purchased");
+    setListings((prev) =>
+      prev.map((item) => (item.id === listingId ? { ...item, status: "SOLD" } : item)),
+    );
+    if (sharedListing?.id === listingId) {
+      setSharedListing({ ...sharedListing, status: "SOLD" });
+    }
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new Event("wallet:refresh"));
+    }
+  };
+
   const resetPage = () => setPage(1);
   const clearShared = () => {
     if (typeof window === "undefined") return;
@@ -459,13 +486,25 @@ export default function Market() {
                   </span>
                 ))}
               </div>
-              <div className="mt-4 flex items-center justify-between">
+              <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
                 <div className="text-sm text-neutral-100">
                   {sharedListing.type === "SALE"
                     ? `Цена: ${sharedListing.price ?? "-"} ${sharedListing.currency ?? ""}`
                     : `Обмен: ${sharedListing.tradeNote ?? "-"}`}
                 </div>
-                <ContactButton listing={sharedListing} />
+                <div className="flex flex-wrap items-center gap-2">
+                  {sharedListing.type === "SALE" &&
+                  (sharedListing.currency || "").toUpperCase() === "RUB" &&
+                  sharedListing.status === "ACTIVE" ? (
+                    <button
+                      className="rounded-full border border-emerald-400/70 px-3 py-1 text-xs text-emerald-200 hover:border-emerald-300"
+                      onClick={() => buyListing(sharedListing.id)}
+                    >
+                      Buy for {sharedListing.price ?? "-"} TC
+                    </button>
+                  ) : null}
+                  <ContactButton listing={sharedListing} />
+                </div>
               </div>
             </article>
           </div>
@@ -528,13 +567,25 @@ export default function Market() {
                   </span>
                 ))}
               </div>
-              <div className="mt-4 flex items-center justify-between">
+              <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
                 <div className="text-sm text-neutral-300">
                   {listing.type === "SALE"
                     ? `Цена: ${listing.price ?? "-"} ${listing.currency ?? ""}`
                     : `Обмен: ${listing.tradeNote ?? "-"}`}
                 </div>
-                <ContactButton listing={listing} />
+                <div className="flex flex-wrap items-center gap-2">
+                  {listing.type === "SALE" &&
+                  (listing.currency || "").toUpperCase() === "RUB" &&
+                  listing.status === "ACTIVE" ? (
+                    <button
+                      className="rounded-full border border-emerald-400/70 px-3 py-1 text-xs text-emerald-200 hover:border-emerald-300"
+                      onClick={() => buyListing(listing.id)}
+                    >
+                      Buy for {listing.price ?? "-"} TC
+                    </button>
+                  ) : null}
+                  <ContactButton listing={listing} />
+                </div>
               </div>
             </article>
           ))}
@@ -621,7 +672,7 @@ function CreateListing({ catalog, initData, hasAuth }: { catalog: Game[]; initDa
   const [description, setDescription] = useState("");
   const [type, setType] = useState<"SALE" | "TRADE">("SALE");
   const [price, setPrice] = useState("");
-  const [currency, setCurrency] = useState("USD");
+  const [currency, setCurrency] = useState("RUB");
   const [tradeNote, setTradeNote] = useState("");
   const [contactAlt, setContactAlt] = useState("");
   const [gameId, setGameId] = useState("");

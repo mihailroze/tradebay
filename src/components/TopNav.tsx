@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import TelegramLogin from "@/components/TelegramLogin";
+import WalletPanel from "@/components/WalletPanel";
 
 const baseLinks = [
   { href: "/", label: "Рынок" },
@@ -138,6 +139,7 @@ export default function TopNav() {
             ) : null}
           </div>
         ) : null}
+        <WalletPanel initData={initData} isAuthed={isAuthed} />
         {!initData && !isAuthed ? <TelegramLogin onSuccess={() => setAuthTick((v) => v + 1)} /> : null}
       </div>
     </nav>
