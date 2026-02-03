@@ -77,6 +77,7 @@ export default function MyListings() {
   const [listings, setListings] = useState<Listing[]>([]);
   const [status, setStatus] = useState("");
   const [hasAuth, setHasAuth] = useState(false);
+  const [walletBalance, setWalletBalance] = useState<number | null>(null);
 
   useEffect(() => {
     let attempts = 0;
@@ -111,6 +112,34 @@ export default function MyListings() {
       .then((data: { ok?: boolean }) => setHasAuth(Boolean(data.ok)))
       .catch(() => setHasAuth(false));
   }, [initData]);
+
+  useEffect(() => {
+    if (!initData && !hasAuth) {
+      setWalletBalance(null);
+      return;
+    }
+    fetch("/api/wallet", {
+      headers: initData ? { "x-telegram-init-data": initData } : undefined,
+    })
+      .then((res) => res.json())
+      .then((data: { balance?: number }) => setWalletBalance(Number(data.balance ?? 0)))
+      .catch(() => setWalletBalance(null));
+  }, [initData, hasAuth]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const handler = () => {
+      if (!initData && !hasAuth) return;
+      fetch("/api/wallet", {
+        headers: initData ? { "x-telegram-init-data": initData } : undefined,
+      })
+        .then((res) => res.json())
+        .then((data: { balance?: number }) => setWalletBalance(Number(data.balance ?? 0)))
+        .catch(() => setWalletBalance(null));
+    };
+    window.addEventListener("wallet:refresh", handler);
+    return () => window.removeEventListener("wallet:refresh", handler);
+  }, [initData, hasAuth]);
 
   useEffect(() => {
     loadListings();
@@ -159,9 +188,12 @@ export default function MyListings() {
     <div className="min-h-screen bg-neutral-950 text-neutral-100">
       <div className="mx-auto flex w-full max-w-6xl flex-col gap-10 px-5 py-10">
         <TopNav />
-        <header className="flex items-center justify-between gap-3">
+        <header className="flex flex-wrap items-center justify-between gap-3">
           <h2 className="text-2xl font-semibold tracking-tight">Мои лоты</h2>
-          <span className="text-xs text-neutral-400">{status}</span>
+          <div className="flex flex-wrap items-center gap-3 text-xs text-neutral-400">
+            <span>{status}</span>
+            {walletBalance !== null ? <span>??????: {walletBalance} TC</span> : null}
+          </div>
         </header>
 
         {!initData && !hasAuth ? (
@@ -200,11 +232,12 @@ export default function MyListings() {
                   </span>
                 ))}
               </div>
-              <div className="mt-4 flex items-center justify-between">
+              <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
                 <div className="text-sm text-neutral-300">
                   {listing.type === "SALE"
                     ? `Цена: ${listing.price ?? "-"} ${listing.currency ?? ""}`
                     : `Обмен: ${listing.tradeNote ?? "-"}`}
+                {walletBalance !== null ? <span className="text-xs text-neutral-400">??????: {walletBalance} TC</span> : null}
                 </div>
                 <div className="flex flex-wrap gap-2">
                   <button

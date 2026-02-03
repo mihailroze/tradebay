@@ -124,6 +124,8 @@ export default function Market() {
   const [status, setStatus] = useState("");
   const [initData, setInitData] = useState("");
   const [hasAuth, setHasAuth] = useState(false);
+  const [walletBalance, setWalletBalance] = useState<number | null>(null);
+  const [payableOnly, setPayableOnly] = useState(false);
   const [sharedListingId, setSharedListingId] = useState("");
   const [sharedListing, setSharedListing] = useState<Listing | null>(null);
   const [sharedError, setSharedError] = useState("");
@@ -171,6 +173,7 @@ export default function Market() {
     if (categoryId) params.set("categoryId", categoryId);
     if (tagId) params.set("tagId", tagId);
     if (type) params.set("type", type);
+    if (payableOnly) params.set("payable", "1");
     if (sort) params.set("sort", sort);
     params.set("page", String(page));
     params.set("pageSize", String(PAGE_SIZE));
@@ -183,7 +186,7 @@ export default function Market() {
         setTotal(data.total || 0);
       })
       .catch(() => setListings([]));
-  }, [search, gameId, serverId, categoryId, tagId, type, sort, page, initData]);
+  }, [search, gameId, serverId, categoryId, tagId, type, payableOnly, sort, page, initData]);
 
   useEffect(() => {
     if (!sharedListingId) {
@@ -225,6 +228,34 @@ export default function Market() {
       .catch(() => setHasAuth(false));
   }, [initData]);
 
+  useEffect(() => {
+    if (!initData && !hasAuth) {
+      setWalletBalance(null);
+      return;
+    }
+    fetch("/api/wallet", {
+      headers: initData ? { "x-telegram-init-data": initData } : undefined,
+    })
+      .then((res) => res.json())
+      .then((data: { balance?: number }) => setWalletBalance(Number(data.balance ?? 0)))
+      .catch(() => setWalletBalance(null));
+  }, [initData, hasAuth]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const handler = () => {
+      if (!initData && !hasAuth) return;
+      fetch("/api/wallet", {
+        headers: initData ? { "x-telegram-init-data": initData } : undefined,
+      })
+        .then((res) => res.json())
+        .then((data: { balance?: number }) => setWalletBalance(Number(data.balance ?? 0)))
+        .catch(() => setWalletBalance(null));
+    };
+    window.addEventListener("wallet:refresh", handler);
+    return () => window.removeEventListener("wallet:refresh", handler);
+  }, [initData, hasAuth]);
+
   const game = catalog.find((g) => g.id === gameId);
   const servers = game?.servers ?? [];
   const categories = game?.categories ?? [];
@@ -252,20 +283,20 @@ export default function Market() {
 
   const buyListing = async (listingId: string) => {
     if (!initData && !hasAuth) {
-      setStatus("Login via Telegram to buy.");
+      setStatus("Р’РѕР№РґРёС‚Рµ С‡РµСЂРµР· Telegram, С‡С‚РѕР±С‹ РїРѕРєСѓРїР°С‚СЊ.");
       return;
     }
-    setStatus("Processing purchase...");
+    setStatus("РџРѕРєСѓРїРєР°...");
     const res = await fetch(`/api/listings/${listingId}/purchase`, {
       method: "POST",
       headers: initData ? { "x-telegram-init-data": initData } : undefined,
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
-      setStatus(data.error || "Purchase failed");
+      setStatus(data.error || "РџРѕРєСѓРїРєР° РЅРµ СѓРґР°Р»Р°СЃСЊ");
       return;
     }
-    setStatus("Purchased");
+    setStatus("РџРѕРєСѓРїРєР° СѓСЃРїРµС€РЅР°");
     setListings((prev) =>
       prev.map((item) => (item.id === listingId ? { ...item, status: "SOLD" } : item)),
     );
@@ -275,6 +306,13 @@ export default function Market() {
     if (typeof window !== "undefined") {
       window.dispatchEvent(new Event("wallet:refresh"));
     }
+  };
+
+  const canAfford = (price?: string | null) => {
+    if (walletBalance === null) return false;
+    const value = Number(price);
+    if (!Number.isFinite(value)) return false;
+    return walletBalance >= value;
   };
 
   const resetPage = () => setPage(1);
@@ -351,7 +389,11 @@ export default function Market() {
             <select
               value={type}
               onChange={(e) => {
-                setType(e.target.value);
+                const next = e.target.value;
+                setType(next);
+                if (next !== "SALE" && payableOnly) {
+                  setPayableOnly(false);
+                }
                 resetPage();
               }}
               className="w-full rounded-2xl border border-neutral-800 bg-neutral-900 px-4 py-3 text-sm outline-none focus:border-neutral-500"
@@ -360,6 +402,22 @@ export default function Market() {
               <option value="SALE">Продажа</option>
               <option value="TRADE">Обмен</option>
             </select>
+            <label className="flex items-center gap-3 rounded-2xl border border-neutral-800 bg-neutral-900 px-4 py-3 text-sm text-neutral-300">
+              <input
+                type="checkbox"
+                checked={payableOnly}
+                onChange={(e) => {
+                  const next = e.target.checked;
+                  setPayableOnly(next);
+                  if (next && type !== "SALE") {
+                    setType("SALE");
+                  }
+                  resetPage();
+                }}
+                className="h-4 w-4 accent-white"
+              />
+              ?????? ? ??????? TC
+            </label>
             <select
               value={serverId}
               onChange={(e) => {
@@ -497,11 +555,19 @@ export default function Market() {
                   (sharedListing.currency || "").toUpperCase() === "RUB" &&
                   sharedListing.status === "ACTIVE" ? (
                     <button
-                      className="rounded-full border border-emerald-400/70 px-3 py-1 text-xs text-emerald-200 hover:border-emerald-300"
+                      className={`rounded-full border px-3 py-1 text-xs ${
+                        canAfford(sharedListing.price)
+                          ? "border-emerald-400/70 text-emerald-200 hover:border-emerald-300"
+                          : "border-neutral-700 text-neutral-500"
+                      }`}
                       onClick={() => buyListing(sharedListing.id)}
+                      disabled={!canAfford(sharedListing.price)}
                     >
                       Buy for {sharedListing.price ?? "-"} TC
                     </button>
+                  ) : null}
+                  {walletBalance !== null ? (
+                    <span className="text-xs text-neutral-400">??????: {walletBalance} TC</span>
                   ) : null}
                   <ContactButton listing={sharedListing} />
                 </div>
@@ -578,11 +644,19 @@ export default function Market() {
                   (listing.currency || "").toUpperCase() === "RUB" &&
                   listing.status === "ACTIVE" ? (
                     <button
-                      className="rounded-full border border-emerald-400/70 px-3 py-1 text-xs text-emerald-200 hover:border-emerald-300"
+                      className={`rounded-full border px-3 py-1 text-xs ${
+                        canAfford(listing.price)
+                          ? "border-emerald-400/70 text-emerald-200 hover:border-emerald-300"
+                          : "border-neutral-700 text-neutral-500"
+                      }`}
                       onClick={() => buyListing(listing.id)}
+                      disabled={!canAfford(listing.price)}
                     >
                       Buy for {listing.price ?? "-"} TC
                     </button>
+                  ) : null}
+                  {walletBalance !== null ? (
+                    <span className="text-xs text-neutral-400">??????: {walletBalance} TC</span>
                   ) : null}
                   <ContactButton listing={listing} />
                 </div>

@@ -10,6 +10,7 @@ const baseLinks = [
   { href: "/", label: "Рынок" },
   { href: "/my", label: "Мои лоты" },
   { href: "/favorites", label: "Избранное" },
+  { href: "/wallet", label: "???????" },
 ];
 
 function getInitData(): string {

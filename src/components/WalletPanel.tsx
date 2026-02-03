@@ -51,12 +51,12 @@ export default function WalletPanel({ initData, isAuthed }: Props) {
 
   const startTopUp = async () => {
     if (!isAuthed) {
-      setStatus("Login required");
+      setStatus("Нужно войти через Telegram");
       return;
     }
     const value = Number(amount);
     if (!Number.isFinite(value) || !Number.isInteger(value) || value <= 0) {
-      setStatus("Enter whole amount");
+      setStatus("Введите целое число");
       return;
     }
     setLoading(true);
@@ -72,7 +72,7 @@ export default function WalletPanel({ initData, isAuthed }: Props) {
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
       setLoading(false);
-      setStatus(data.error || "Top-up failed");
+      setStatus(data.error || "Пополнение не удалось");
       return;
     }
 
@@ -80,14 +80,17 @@ export default function WalletPanel({ initData, isAuthed }: Props) {
     const tg = getTelegramWebApp();
     if (tg?.openInvoice) {
       tg.openInvoice(invoiceUrl, (result) => {
-        setStatus(`Invoice: ${result}`);
+        setStatus(`Статус инвойса: ${result}`);
         if (result === "paid" || result === "pending") {
           setTimeout(loadWallet, 1500);
+          if (typeof window !== "undefined") {
+            window.dispatchEvent(new Event("wallet:refresh"));
+          }
         }
       });
     } else if (typeof window !== "undefined") {
       window.open(invoiceUrl, "_blank");
-      setStatus("Open invoice in Telegram to pay");
+      setStatus("Откройте инвойс в Telegram для оплаты");
     }
     setLoading(false);
   };

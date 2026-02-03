@@ -31,6 +31,7 @@ export async function GET(req: Request) {
   const categoryId = searchParams.get("categoryId") || undefined;
   const tagId = searchParams.get("tagId") || undefined;
   const type = searchParams.get("type") || undefined;
+  const payableOnly = searchParams.get("payable") === "1" || searchParams.get("payable") === "true";
   const sort = (searchParams.get("sort") || "NEWEST").toUpperCase();
   const pageRaw = Number(searchParams.get("page"));
   const pageSizeRaw = Number(searchParams.get("pageSize"));
@@ -43,6 +44,12 @@ export async function GET(req: Request) {
     serverId,
     categoryId,
     type: type === "SALE" || type === "TRADE" ? type : undefined,
+    ...(payableOnly
+      ? {
+          type: "SALE",
+          currency: { equals: "RUB", mode: Prisma.QueryMode.insensitive },
+        }
+      : {}),
     ...(search
       ? {
           OR: [
@@ -138,6 +145,9 @@ export async function POST(req: Request) {
     if (!parsedPayload.price || !parsedPayload.currency) {
       return NextResponse.json({ error: "Price and currency required for sale" }, { status: 400 });
     }
+    if (parsedPayload.currency.toUpperCase() === "RUB" && !Number.isInteger(parsedPayload.price)) {
+      return NextResponse.json({ error: "RUB price must be a whole number" }, { status: 400 });
+    }
   }
   if (parsedPayload.type === "TRADE" && !parsedPayload.tradeNote) {
     return NextResponse.json({ error: "Trade note required for trade" }, { status: 400 });
@@ -171,7 +181,7 @@ export async function POST(req: Request) {
       description: parsedPayload.description ?? null,
       type: parsedPayload.type,
       price: parsedPayload.price ?? null,
-      currency: parsedPayload.currency ?? null,
+      currency: parsedPayload.currency ? parsedPayload.currency.toUpperCase() : null,
       tradeNote: parsedPayload.tradeNote ?? null,
       contactAlt: contactAlt ?? null,
       gameId: parsedPayload.gameId,
