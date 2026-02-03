@@ -1,7 +1,9 @@
-import type { Metadata } from "next";
+﻿import type { Metadata } from "next";
 import { headers } from "next/headers";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
+import { getListingPricing } from "@/lib/pricing";
+import { Prisma } from "@prisma/client";
 import OpenInTelegram from "@/components/OpenInTelegram";
 
 type PageProps = {
@@ -10,6 +12,14 @@ type PageProps = {
 
 export const dynamic = "force-dynamic";
 
+function parseRubPrice(price: Prisma.Decimal): number | null {
+  const raw = price.toString();
+  if (!/^\d+(\.0+)?$/.test(raw)) return null;
+  const value = Number(raw);
+  if (!Number.isFinite(value) || !Number.isInteger(value) || value <= 0) return null;
+  return value;
+}
+
 async function getBaseUrl() {
   const hdrs = await headers();
   const host = hdrs.get("x-forwarded-host") || hdrs.get("host") || "localhost:3000";
@@ -17,12 +27,23 @@ async function getBaseUrl() {
   return `${proto}://${host}`;
 }
 
+function buildDetail(listing: Awaited<ReturnType<typeof loadListing>>) {
+  if (!listing) return "Игровой лот в TradeBay";
+  if (listing.type === "SALE" && listing.currency?.toUpperCase() === "RUB" && listing.price) {
+    const baseRub = parseRubPrice(listing.price);
+    if (baseRub) {
+      const pricing = getListingPricing(baseRub);
+      return `Цена: ${pricing.totalStars} TC`;
+    }
+  }
+  return listing.type === "SALE"
+    ? `Цена: ${listing.price ?? "-"}${listing.currency ? ` ${listing.currency}` : ""}`
+    : `Обмен: ${listing.tradeNote ?? "-"}`;
+}
+
 function buildDescription(listing: Awaited<ReturnType<typeof loadListing>>) {
   if (!listing) return "Игровой лот в TradeBay";
-  const detail =
-    listing.type === "SALE"
-      ? `Цена: ${listing.price ?? "-"}${listing.currency ? ` ${listing.currency}` : ""}`
-      : `Обмен: ${listing.tradeNote ?? "-"}`;
+  const detail = buildDetail(listing);
   const scope = [listing.game?.name, listing.server?.name].filter(Boolean).join(" · ");
   return [detail, scope].filter(Boolean).join(" · ");
 }
@@ -72,10 +93,7 @@ export default async function ListingSharePage({ params }: PageProps) {
   const listing = await loadListing(id);
   if (!listing) return notFound();
 
-  const detail =
-    listing.type === "SALE"
-      ? `Цена: ${listing.price ?? "-"}${listing.currency ? ` ${listing.currency}` : ""}`
-      : `Обмен: ${listing.tradeNote ?? "-"}`;
+  const detail = buildDetail(listing);
 
   return (
     <div className="min-h-screen bg-neutral-950 text-neutral-100">

@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import type { FormEvent } from "react";
 import { useEffect, useState } from "react";
@@ -21,7 +21,11 @@ type Listing = {
   currency?: string | null;
   tradeNote?: string | null;
   contactAlt?: string | null;
-  status?: "ACTIVE" | "SOLD" | "HIDDEN";
+  status?: "ACTIVE" | "RESERVED" | "SOLD" | "HIDDEN";
+  priceStars?: number | null;
+  feeStars?: number | null;
+  feePercent?: number | null;
+  isBuyer?: boolean;
   images: { id: string }[];
   tags: { tag: { id: string; name: string } }[];
   game?: { id: string; name: string };
@@ -106,6 +110,30 @@ function isSellerOnline(lastSeenAt: string | null | undefined): boolean {
   const last = new Date(lastSeenAt).getTime();
   if (Number.isNaN(last)) return false;
   return Date.now() - last < 5 * 60 * 1000;
+}
+
+function formatStatus(status?: Listing["status"]) {
+  switch (status) {
+    case "RESERVED":
+      return "Ожидает подтверждения";
+    case "SOLD":
+      return "Продан";
+    case "HIDDEN":
+      return "Скрыт";
+    default:
+      return "";
+  }
+}
+
+function formatPrice(listing: Listing) {
+  if (listing.type === "TRADE") {
+    return `Обмен: ${listing.tradeNote ?? "-"}`;
+  }
+  const stars = listing.priceStars;
+  if (stars === null || stars === undefined) {
+    return "Цена: -";
+  }
+  return `Цена: ${stars} TC`;
 }
 
 export default function Market() {
@@ -283,23 +311,48 @@ export default function Market() {
 
   const buyListing = async (listingId: string) => {
     if (!initData && !hasAuth) {
-      setStatus("Р’РѕР№РґРёС‚Рµ С‡РµСЂРµР· Telegram, С‡С‚РѕР±С‹ РїРѕРєСѓРїР°С‚СЊ.");
+      setStatus("Войдите через Telegram, чтобы покупать.");
       return;
     }
-    setStatus("РџРѕРєСѓРїРєР°...");
+    setStatus("Создаем сделку...");
     const res = await fetch(`/api/listings/${listingId}/purchase`, {
       method: "POST",
       headers: initData ? { "x-telegram-init-data": initData } : undefined,
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
-      setStatus(data.error || "РџРѕРєСѓРїРєР° РЅРµ СѓРґР°Р»Р°СЃСЊ");
+      setStatus(data.error || "Покупка не удалась");
       return;
     }
-    setStatus("РџРѕРєСѓРїРєР° СѓСЃРїРµС€РЅР°");
+    setStatus("Сделка создана. Средства заморожены до подтверждения.");
     setListings((prev) =>
-      prev.map((item) => (item.id === listingId ? { ...item, status: "SOLD" } : item)),
+      prev.map((item) => (item.id === listingId ? { ...item, status: "RESERVED", isBuyer: true } : item)),
     );
+    if (sharedListing?.id === listingId) {
+      setSharedListing({ ...sharedListing, status: "RESERVED", isBuyer: true });
+    }
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new Event("wallet:refresh"));
+    }
+  };
+
+  const confirmPurchase = async (listingId: string) => {
+    if (!initData && !hasAuth) {
+      setStatus("Войдите через Telegram, чтобы подтвердить сделку.");
+      return;
+    }
+    setStatus("Подтверждаем сделку...");
+    const res = await fetch(`/api/listings/${listingId}/confirm`, {
+      method: "POST",
+      headers: initData ? { "x-telegram-init-data": initData } : undefined,
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      setStatus(data.error || "Не удалось подтвердить сделку");
+      return;
+    }
+    setStatus("Сделка подтверждена");
+    setListings((prev) => prev.map((item) => (item.id === listingId ? { ...item, status: "SOLD" } : item)));
     if (sharedListing?.id === listingId) {
       setSharedListing({ ...sharedListing, status: "SOLD" });
     }
@@ -308,9 +361,9 @@ export default function Market() {
     }
   };
 
-  const canAfford = (price?: string | null) => {
+  const canAfford = (priceStars?: number | null) => {
     if (walletBalance === null) return false;
-    const value = Number(price);
+    const value = Number(priceStars);
     if (!Number.isFinite(value)) return false;
     return walletBalance >= value;
   };
@@ -416,7 +469,7 @@ export default function Market() {
                 }}
                 className="h-4 w-4 accent-white"
               />
-              ?????? ? ??????? TC
+              Только покупка за TC
             </label>
             <select
               value={serverId}
@@ -505,10 +558,10 @@ export default function Market() {
               <div className="flex items-start justify-between gap-4">
                 <div>
                   <h3 className="text-lg font-semibold">{sharedListing.title}</h3>
-                  <p className="text-sm text-neutral-300">
+                  <p className="text-sm text-neutral-400">
                     {sharedListing.game?.name}
-                    {sharedListing.server?.name ? ` В· ${sharedListing.server.name}` : ""}
-                    {sharedListing.category?.name ? ` В· ${sharedListing.category.name}` : ""}
+                    {sharedListing.server?.name ? ` · ${sharedListing.server.name}` : ""}
+                    {sharedListing.category?.name ? ` · ${sharedListing.category.name}` : ""}
                   </p>
                 </div>
                 <div className="flex flex-wrap items-center justify-end gap-2">
@@ -518,7 +571,7 @@ export default function Market() {
                     }`}
                     onClick={() => toggleFavorite(sharedListing.id, !sharedListing.isFavorite)}
                   >
-                    ★
+                    ?
                   </button>
                   <button
                     className="rounded-full border border-neutral-700 px-3 py-1 text-xs text-neutral-300 hover:border-white"
@@ -531,7 +584,7 @@ export default function Market() {
                   </span>
                   {sharedListing.status && sharedListing.status !== "ACTIVE" ? (
                     <span className="rounded-full border border-amber-400/70 px-3 py-1 text-xs uppercase tracking-wider text-amber-200">
-                      {sharedListing.status === "SOLD" ? "Продан" : "Скрыт"}
+                      {formatStatus(sharedListing.status)}
                     </span>
                   ) : null}
                 </div>
@@ -546,9 +599,10 @@ export default function Market() {
               </div>
               <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
                 <div className="text-sm text-neutral-100">
-                  {sharedListing.type === "SALE"
-                    ? `Цена: ${sharedListing.price ?? "-"} ${sharedListing.currency ?? ""}`
-                    : `Обмен: ${sharedListing.tradeNote ?? "-"}`}
+                  {formatPrice(sharedListing)}
+                  {sharedListing.feePercent ? (
+                    <span className="ml-2 text-xs text-neutral-400">Комиссия {sharedListing.feePercent}% включена</span>
+                  ) : null}
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
                   {sharedListing.type === "SALE" &&
@@ -556,18 +610,26 @@ export default function Market() {
                   sharedListing.status === "ACTIVE" ? (
                     <button
                       className={`rounded-full border px-3 py-1 text-xs ${
-                        canAfford(sharedListing.price)
+                        canAfford(sharedListing.priceStars)
                           ? "border-emerald-400/70 text-emerald-200 hover:border-emerald-300"
                           : "border-neutral-700 text-neutral-500"
                       }`}
                       onClick={() => buyListing(sharedListing.id)}
-                      disabled={!canAfford(sharedListing.price)}
+                      disabled={!canAfford(sharedListing.priceStars)}
                     >
-                      Buy for {sharedListing.price ?? "-"} TC
+                      Купить за {sharedListing.priceStars ?? "-"} TC
+                    </button>
+                  ) : null}
+                  {sharedListing.status === "RESERVED" && sharedListing.isBuyer ? (
+                    <button
+                      className="rounded-full border border-emerald-400/70 px-3 py-1 text-xs text-emerald-200 hover:border-emerald-300"
+                      onClick={() => confirmPurchase(sharedListing.id)}
+                    >
+                      Подтвердить сделку
                     </button>
                   ) : null}
                   {walletBalance !== null ? (
-                    <span className="text-xs text-neutral-400">??????: {walletBalance} TC</span>
+                    <span className="text-xs text-neutral-400">Баланс: {walletBalance} TC</span>
                   ) : null}
                   <ContactButton listing={sharedListing} />
                 </div>
@@ -607,7 +669,7 @@ export default function Market() {
                     }`}
                     onClick={() => toggleFavorite(listing.id, !listing.isFavorite)}
                   >
-                    ★
+                    ?
                   </button>
                   <button
                     className="rounded-full border border-neutral-700 px-3 py-1 text-xs text-neutral-300 hover:border-white"
@@ -620,7 +682,7 @@ export default function Market() {
                   </span>
                   {listing.status && listing.status !== "ACTIVE" ? (
                     <span className="rounded-full border border-amber-400/70 px-3 py-1 text-xs uppercase tracking-wider text-amber-200">
-                      {listing.status === "SOLD" ? "Продан" : "Скрыт"}
+                      {formatStatus(listing.status)}
                     </span>
                   ) : null}
                 </div>
@@ -635,9 +697,10 @@ export default function Market() {
               </div>
               <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
                 <div className="text-sm text-neutral-300">
-                  {listing.type === "SALE"
-                    ? `Цена: ${listing.price ?? "-"} ${listing.currency ?? ""}`
-                    : `Обмен: ${listing.tradeNote ?? "-"}`}
+                  {formatPrice(listing)}
+                  {listing.feePercent ? (
+                    <span className="ml-2 text-xs text-neutral-500">Комиссия {listing.feePercent}% включена</span>
+                  ) : null}
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
                   {listing.type === "SALE" &&
@@ -645,18 +708,26 @@ export default function Market() {
                   listing.status === "ACTIVE" ? (
                     <button
                       className={`rounded-full border px-3 py-1 text-xs ${
-                        canAfford(listing.price)
+                        canAfford(listing.priceStars)
                           ? "border-emerald-400/70 text-emerald-200 hover:border-emerald-300"
                           : "border-neutral-700 text-neutral-500"
                       }`}
                       onClick={() => buyListing(listing.id)}
-                      disabled={!canAfford(listing.price)}
+                      disabled={!canAfford(listing.priceStars)}
                     >
-                      Buy for {listing.price ?? "-"} TC
+                      Купить за {listing.priceStars ?? "-"} TC
+                    </button>
+                  ) : null}
+                  {listing.status === "RESERVED" && listing.isBuyer ? (
+                    <button
+                      className="rounded-full border border-emerald-400/70 px-3 py-1 text-xs text-emerald-200 hover:border-emerald-300"
+                      onClick={() => confirmPurchase(listing.id)}
+                    >
+                      Подтвердить сделку
                     </button>
                   ) : null}
                   {walletBalance !== null ? (
-                    <span className="text-xs text-neutral-400">??????: {walletBalance} TC</span>
+                    <span className="text-xs text-neutral-400">Баланс: {walletBalance} TC</span>
                   ) : null}
                   <ContactButton listing={listing} />
                 </div>
@@ -735,7 +806,7 @@ function buildShareUrl(listingId: string): string {
 function buildShareText(listing: Listing): string {
   const detail =
     listing.type === "SALE"
-      ? `Цена: ${listing.price ?? "-"}${listing.currency ? ` ${listing.currency}` : ""}`
+      ? `Цена: ${listing.priceStars ?? "-"} TC`
       : `Обмен: ${listing.tradeNote ?? "-"}`;
   const raw = `${listing.title} · ${detail}`.trim();
   return raw.length > 140 ? `${raw.slice(0, 137)}...` : raw;
@@ -882,7 +953,7 @@ function CreateListing({ catalog, initData, hasAuth }: { catalog: Game[]; initDa
           <input
             value={price}
             onChange={(e) => setPrice(e.target.value)}
-            placeholder="Цена"
+            placeholder="Цена (в рублях)"
             className="rounded-2xl border border-neutral-800 bg-neutral-950 px-4 py-3 text-sm outline-none focus:border-neutral-500"
             required
           />
@@ -893,6 +964,9 @@ function CreateListing({ catalog, initData, hasAuth }: { catalog: Game[]; initDa
             className="rounded-2xl border border-neutral-800 bg-neutral-950 px-4 py-3 text-sm outline-none focus:border-neutral-500"
             required
           />
+          <p className="text-xs text-neutral-500 md:col-span-2">
+            Покупатели увидят цену в TC с учетом комиссии платформы.
+          </p>
         </div>
       ) : (
         <input

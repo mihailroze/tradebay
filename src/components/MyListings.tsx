@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useState } from "react";
 import TopNav from "@/components/TopNav";
@@ -11,7 +11,10 @@ type Listing = {
   price?: string | null;
   currency?: string | null;
   tradeNote?: string | null;
-  status: "ACTIVE" | "SOLD" | "HIDDEN";
+  priceStars?: number | null;
+  feeStars?: number | null;
+  feePercent?: number | null;
+  status: "ACTIVE" | "RESERVED" | "SOLD" | "HIDDEN";
   images: { id: string }[];
   tags: { tag: { id: string; name: string } }[];
   game?: { id: string; name: string };
@@ -66,10 +69,35 @@ function buildShareUrl(listingId: string): string {
 function buildShareText(listing: Listing): string {
   const detail =
     listing.type === "SALE"
-      ? `Цена: ${listing.price ?? "-"}${listing.currency ? ` ${listing.currency}` : ""}`
+      ? `Цена: ${listing.priceStars ?? "-"} TC`
       : `Обмен: ${listing.tradeNote ?? "-"}`;
   const raw = `${listing.title} · ${detail}`.trim();
   return raw.length > 140 ? `${raw.slice(0, 137)}...` : raw;
+}
+
+function formatStatus(status: Listing["status"]) {
+  switch (status) {
+    case "RESERVED":
+      return "Ожидает подтверждения";
+    case "SOLD":
+      return "Продан";
+    case "HIDDEN":
+      return "Скрыт";
+    case "ACTIVE":
+    default:
+      return "Активен";
+  }
+}
+
+function formatPrice(listing: Listing) {
+  if (listing.type !== "SALE") {
+    return `Обмен: ${listing.tradeNote ?? "-"}`;
+  }
+  const stars = listing.priceStars;
+  if (stars === null || stars === undefined) {
+    return "Цена: -";
+  }
+  return `Цена: ${stars} TC`;
 }
 
 export default function MyListings() {
@@ -192,7 +220,7 @@ export default function MyListings() {
           <h2 className="text-2xl font-semibold tracking-tight">Мои лоты</h2>
           <div className="flex flex-wrap items-center gap-3 text-xs text-neutral-400">
             <span>{status}</span>
-            {walletBalance !== null ? <span>??????: {walletBalance} TC</span> : null}
+            {walletBalance !== null ? <span>Баланс: {walletBalance} TC</span> : null}
           </div>
         </header>
 
@@ -221,7 +249,7 @@ export default function MyListings() {
                   </p>
                 </div>
                 <span className="rounded-full border border-neutral-700 px-3 py-1 text-xs uppercase tracking-wider">
-                  {listing.status}
+                  {formatStatus(listing.status)}
                 </span>
               </div>
               {listing.description ? <p className="mt-3 text-sm text-neutral-200">{listing.description}</p> : null}
@@ -234,10 +262,10 @@ export default function MyListings() {
               </div>
               <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
                 <div className="text-sm text-neutral-300">
-                  {listing.type === "SALE"
-                    ? `Цена: ${listing.price ?? "-"} ${listing.currency ?? ""}`
-                    : `Обмен: ${listing.tradeNote ?? "-"}`}
-                {walletBalance !== null ? <span className="text-xs text-neutral-400">??????: {walletBalance} TC</span> : null}
+                  {formatPrice(listing)}
+                  {listing.feePercent ? (
+                    <span className="ml-2 text-xs text-neutral-500">Комиссия {listing.feePercent}% включена</span>
+                  ) : null}
                 </div>
                 <div className="flex flex-wrap gap-2">
                   <button

@@ -4,10 +4,19 @@ import { z } from "zod";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { getAuthTelegramUser } from "@/lib/auth";
+import { getListingPricing } from "@/lib/pricing";
 
 const MAX_IMAGES = 5;
 const MAX_IMAGE_SIZE = 2 * 1024 * 1024;
 const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp"];
+
+function parseRubPrice(price: Prisma.Decimal): number | null {
+  const raw = price.toString();
+  if (!/^\d+(\.0+)?$/.test(raw)) return null;
+  const value = Number(raw);
+  if (!Number.isFinite(value) || !Number.isInteger(value) || value <= 0) return null;
+  return value;
+}
 
 const createSchema = z.object({
   title: z.string().min(3).max(120),
@@ -111,10 +120,22 @@ export async function GET(req: Request) {
     }
   }
 
-  const listingsWithFavorite = listings.map((listing) => ({
-    ...listing,
-    isFavorite: favoriteIds.has(listing.id),
-  }));
+  const listingsWithFavorite = listings.map((listing) => {
+    let pricing: ReturnType<typeof getListingPricing> | null = null;
+    if (listing.type === "SALE" && listing.currency?.toUpperCase() === "RUB" && listing.price) {
+      const baseRub = parseRubPrice(listing.price);
+      if (baseRub) {
+        pricing = getListingPricing(baseRub);
+      }
+    }
+    return {
+      ...listing,
+      isFavorite: favoriteIds.has(listing.id),
+      priceStars: pricing?.totalStars ?? null,
+      feeStars: pricing?.feeStars ?? null,
+      feePercent: pricing?.feePercent ?? null,
+    };
+  });
 
   return NextResponse.json({ listings: listingsWithFavorite, total, page, pageSize });
 }

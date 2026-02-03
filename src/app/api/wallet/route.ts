@@ -37,6 +37,7 @@ export async function GET() {
 
   return NextResponse.json({
     balance: wallet.balance,
+    lockedBalance: wallet.lockedBalance,
     currency: "TC",
     transactions: transactions.map((tx) => ({
       id: tx.id,

@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useState } from "react";
 import TopNav from "@/components/TopNav";
@@ -11,7 +11,10 @@ type Listing = {
   price?: string | null;
   currency?: string | null;
   tradeNote?: string | null;
-  status: "ACTIVE" | "SOLD" | "HIDDEN";
+  priceStars?: number | null;
+  feeStars?: number | null;
+  feePercent?: number | null;
+  status?: "ACTIVE" | "RESERVED" | "SOLD" | "HIDDEN";
   images: { id: string }[];
   tags: { tag: { id: string; name: string } }[];
   game?: { id: string; name: string };
@@ -71,6 +74,17 @@ function isSellerOnline(lastSeenAt: string | null | undefined): boolean {
   const last = new Date(lastSeenAt).getTime();
   if (Number.isNaN(last)) return false;
   return Date.now() - last < 5 * 60 * 1000;
+}
+
+function formatPrice(listing: Listing) {
+  if (listing.type === "TRADE") {
+    return `Обмен: ${listing.tradeNote ?? "-"}`;
+  }
+  const stars = listing.priceStars;
+  if (stars === null || stars === undefined) {
+    return "Цена: -";
+  }
+  return `Цена: ${stars} TC`;
 }
 
 export default function Favorites() {
@@ -195,9 +209,10 @@ export default function Favorites() {
               </div>
               <div className="mt-4 flex items-center justify-between">
                 <div className="text-sm text-neutral-300">
-                  {listing.type === "SALE"
-                    ? `Цена: ${listing.price ?? "-"} ${listing.currency ?? ""}`
-                    : `Обмен: ${listing.tradeNote ?? "-"}`}
+                  {formatPrice(listing)}
+                  {listing.feePercent ? (
+                    <span className="ml-2 text-xs text-neutral-500">Комиссия {listing.feePercent}% включена</span>
+                  ) : null}
                 </div>
                 <div className="flex items-center gap-3">
                   <span className="flex items-center gap-2 text-xs text-neutral-400">

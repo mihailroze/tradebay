@@ -1,6 +1,16 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getAuthTelegramUser } from "@/lib/auth";
+import { getListingPricing } from "@/lib/pricing";
+import { Prisma } from "@prisma/client";
+
+function parseRubPrice(price: Prisma.Decimal): number | null {
+  const raw = price.toString();
+  if (!/^\d+(\.0+)?$/.test(raw)) return null;
+  const value = Number(raw);
+  if (!Number.isFinite(value) || !Number.isInteger(value) || value <= 0) return null;
+  return value;
+}
 
 export async function GET(req: Request) {
   const tgUser = await getAuthTelegramUser();
@@ -45,10 +55,22 @@ export async function GET(req: Request) {
     }),
   ]);
 
-  const listings = favorites.map((fav) => ({
-    ...fav.listing,
-    isFavorite: true,
-  }));
+  const listings = favorites.map((fav) => {
+    let pricing: ReturnType<typeof getListingPricing> | null = null;
+    if (fav.listing.type === "SALE" && fav.listing.currency?.toUpperCase() === "RUB" && fav.listing.price) {
+      const baseRub = parseRubPrice(fav.listing.price);
+      if (baseRub) {
+        pricing = getListingPricing(baseRub);
+      }
+    }
+    return {
+      ...fav.listing,
+      isFavorite: true,
+      priceStars: pricing?.totalStars ?? null,
+      feeStars: pricing?.feeStars ?? null,
+      feePercent: pricing?.feePercent ?? null,
+    };
+  });
 
   return NextResponse.json({ listings, total, page, pageSize });
 }

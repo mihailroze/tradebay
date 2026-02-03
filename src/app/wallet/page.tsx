@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
@@ -12,6 +12,12 @@ type Transaction = {
   amount: number;
   listingId?: string | null;
   createdAt: string;
+};
+
+type WalletResponse = {
+  balance?: number;
+  lockedBalance?: number;
+  transactions?: Transaction[];
 };
 
 function getInitData(): string {
@@ -65,6 +71,8 @@ function formatType(type: string) {
       return "Продажа";
     case "REFUND":
       return "Возврат";
+    case "FEE":
+      return "Комиссия";
     default:
       return type;
   }
@@ -87,6 +95,7 @@ export default function WalletPage() {
   const [initData, setInitData] = useState("");
   const [isAuthed, setIsAuthed] = useState(false);
   const [balance, setBalance] = useState<number | null>(null);
+  const [lockedBalance, setLockedBalance] = useState<number | null>(null);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [status, setStatus] = useState("");
 
@@ -120,12 +129,14 @@ export default function WalletPage() {
       headers: initData ? { "x-telegram-init-data": initData } : undefined,
     })
       .then((res) => res.json())
-      .then((data: { balance?: number; transactions?: Transaction[] }) => {
+      .then((data: WalletResponse) => {
         setBalance(Number(data.balance ?? 0));
+        setLockedBalance(Number(data.lockedBalance ?? 0));
         setTransactions(Array.isArray(data.transactions) ? data.transactions : []);
       })
       .catch(() => {
         setBalance(null);
+        setLockedBalance(null);
         setTransactions([]);
         setStatus("Не удалось загрузить кошелек.");
       });
@@ -148,7 +159,12 @@ export default function WalletPage() {
         <TopNav />
         <header className="flex flex-wrap items-center justify-between gap-3">
           <h2 className="text-2xl font-semibold tracking-tight">Кошелек</h2>
-          {balance !== null ? <span className="text-sm text-neutral-300">Баланс: {balance} TC</span> : null}
+          {balance !== null ? (
+            <span className="text-sm text-neutral-300">
+              Баланс: {balance} TC
+              {lockedBalance ? <span className="ml-2 text-xs text-neutral-500">Заморожено: {lockedBalance} TC</span> : null}
+            </span>
+          ) : null}
         </header>
 
         {!initData && !isAuthed ? (
@@ -177,9 +193,7 @@ export default function WalletPage() {
                 <div key={tx.id} className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-neutral-800 bg-neutral-950 px-4 py-3 text-sm">
                   <div className="flex flex-col">
                     <span className="text-neutral-100">{formatType(tx.type)}</span>
-                    <span className="text-xs text-neutral-500">
-                      {new Date(tx.createdAt).toLocaleString()}
-                    </span>
+                    <span className="text-xs text-neutral-500">{new Date(tx.createdAt).toLocaleString()}</span>
                   </div>
                   <div className="flex flex-wrap items-center gap-3">
                     <span className="text-sm text-neutral-300">{formatStatus(tx.status)}</span>

@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useState, useCallback } from "react";
 
@@ -9,6 +9,7 @@ type Props = {
 
 type WalletResponse = {
   balance: number;
+  lockedBalance?: number;
   currency: string;
 };
 
@@ -24,6 +25,7 @@ function getTelegramWebApp(): TelegramWebApp | null {
 
 export default function WalletPanel({ initData, isAuthed }: Props) {
   const [balance, setBalance] = useState<number | null>(null);
+  const [lockedBalance, setLockedBalance] = useState<number | null>(null);
   const [amount, setAmount] = useState("100");
   const [status, setStatus] = useState("");
   const [loading, setLoading] = useState(false);
@@ -34,8 +36,14 @@ export default function WalletPanel({ initData, isAuthed }: Props) {
       headers: initData ? { "x-telegram-init-data": initData } : undefined,
     })
       .then((res) => res.json())
-      .then((data: WalletResponse) => setBalance(Number(data.balance ?? 0)))
-      .catch(() => setBalance(null));
+      .then((data: WalletResponse) => {
+        setBalance(Number(data.balance ?? 0));
+        setLockedBalance(Number(data.lockedBalance ?? 0));
+      })
+      .catch(() => {
+        setBalance(null);
+        setLockedBalance(null);
+      });
   }, [initData, isAuthed]);
 
   useEffect(() => {
@@ -101,11 +109,12 @@ export default function WalletPanel({ initData, isAuthed }: Props) {
     <div className="flex flex-wrap items-center gap-2 rounded-full border border-neutral-800 bg-neutral-900 px-3 py-2 text-xs text-neutral-300">
       <span className="text-neutral-400">TC</span>
       <span className="font-semibold text-neutral-100">{balance ?? "..."}</span>
+      {lockedBalance ? <span className="text-neutral-500">Заморожено: {lockedBalance}</span> : null}
       <input
         value={amount}
         onChange={(e) => setAmount(e.target.value)}
         className="w-20 rounded-full border border-neutral-700 bg-neutral-950 px-2 py-1 text-xs text-neutral-100 outline-none"
-        placeholder="Amount"
+        placeholder="Сумма"
         inputMode="numeric"
       />
       <button
@@ -113,7 +122,7 @@ export default function WalletPanel({ initData, isAuthed }: Props) {
         onClick={startTopUp}
         disabled={loading}
       >
-        Top up
+        Пополнить
       </button>
       {status ? <span className="text-neutral-500">{status}</span> : null}
     </div>

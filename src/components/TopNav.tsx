@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -9,8 +9,9 @@ import WalletPanel from "@/components/WalletPanel";
 const baseLinks = [
   { href: "/", label: "Рынок" },
   { href: "/my", label: "Мои лоты" },
+  { href: "/purchases", label: "Мои покупки" },
   { href: "/favorites", label: "Избранное" },
-  { href: "/wallet", label: "???????" },
+  { href: "/wallet", label: "Кошелек" },
 ];
 
 function getInitData(): string {

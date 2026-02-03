@@ -2,10 +2,20 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { getAuthTelegramUser, isAdminTelegramId } from "@/lib/auth";
+import { getListingPricing } from "@/lib/pricing";
+import { Prisma } from "@prisma/client";
 
 const schema = z.object({
   status: z.enum(["ACTIVE", "SOLD", "HIDDEN"]),
 });
+
+function parseRubPrice(price: Prisma.Decimal): number | null {
+  const raw = price.toString();
+  if (!/^\d+(\.0+)?$/.test(raw)) return null;
+  const value = Number(raw);
+  if (!Number.isFinite(value) || !Number.isInteger(value) || value <= 0) return null;
+  return value;
+}
 
 export async function GET(_req: Request, context: { params: Promise<{ id: string }> }) {
   const { id } = await context.params;
@@ -28,23 +38,33 @@ export async function GET(_req: Request, context: { params: Promise<{ id: string
   const tgUser = await getAuthTelegramUser();
   const isAdmin = tgUser ? isAdminTelegramId(tgUser.id) : false;
   const isOwner = tgUser ? listing.seller?.telegramId === String(tgUser.id) : false;
+  let userRecord: { id: string } | null = null;
+  if (tgUser) {
+    userRecord = await prisma.user.findUnique({
+      where: { telegramId: String(tgUser.id) },
+      select: { id: true },
+    });
+  }
+  const isBuyer = Boolean(userRecord && listing.buyerId === userRecord.id);
 
-  if (listing.status !== "ACTIVE" && !isAdmin && !isOwner) {
+  if (listing.status !== "ACTIVE" && !isAdmin && !isOwner && !isBuyer) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
   let isFavorite = false;
-  if (tgUser) {
-    const user = await prisma.user.findUnique({
-      where: { telegramId: String(tgUser.id) },
-      select: { id: true },
-    });
-    if (user) {
+  if (userRecord) {
       const favorite = await prisma.listingFavorite.findUnique({
-        where: { userId_listingId: { userId: user.id, listingId: listing.id } },
+        where: { userId_listingId: { userId: userRecord.id, listingId: listing.id } },
         select: { listingId: true },
       });
       isFavorite = Boolean(favorite);
+  }
+
+  let pricing: ReturnType<typeof getListingPricing> | null = null;
+  if (listing.type === "SALE" && listing.currency?.toUpperCase() === "RUB" && listing.price) {
+    const baseRub = parseRubPrice(listing.price);
+    if (baseRub) {
+      pricing = getListingPricing(baseRub);
     }
   }
 
@@ -55,6 +75,10 @@ export async function GET(_req: Request, context: { params: Promise<{ id: string
       ...listing,
       seller,
       isFavorite,
+      isBuyer,
+      priceStars: pricing?.totalStars ?? null,
+      feeStars: pricing?.feeStars ?? null,
+      feePercent: pricing?.feePercent ?? null,
     },
   });
 }

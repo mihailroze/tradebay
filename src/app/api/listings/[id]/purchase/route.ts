@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { getAuthTelegramUser } from "@/lib/auth";
+import { getListingPricing } from "@/lib/pricing";
 
 function parseRubPrice(price: Prisma.Decimal): number | null {
   const raw = price.toString();
@@ -57,10 +58,13 @@ export async function POST(_req: Request, context: { params: Promise<{ id: strin
         throw new Error("You cannot buy your own listing");
       }
 
-      const amount = parseRubPrice(listing.price);
-      if (!amount) {
+      const baseRub = parseRubPrice(listing.price);
+      if (!baseRub) {
         throw new Error("Price must be a whole number of rubles");
       }
+      const pricing = getListingPricing(baseRub);
+      const totalStars = pricing.totalStars;
+      const feeStars = pricing.feeStars;
 
       const buyerWallet = await db.wallet.upsert({
         where: { userId: buyer.id },
@@ -68,43 +72,24 @@ export async function POST(_req: Request, context: { params: Promise<{ id: strin
         create: { userId: buyer.id },
       });
 
-      if (buyerWallet.balance < amount) {
+      if (buyerWallet.balance < totalStars) {
         throw new Error("Insufficient balance");
       }
 
-      const sellerWallet = await db.wallet.upsert({
-        where: { userId: listing.sellerId },
-        update: {},
-        create: { userId: listing.sellerId },
-      });
-
       await db.wallet.update({
         where: { id: buyerWallet.id },
-        data: { balance: { decrement: amount } },
-      });
-
-      await db.wallet.update({
-        where: { id: sellerWallet.id },
-        data: { balance: { increment: amount } },
+        data: {
+          balance: { decrement: totalStars },
+          lockedBalance: { increment: totalStars },
+        },
       });
 
       await db.walletTransaction.create({
         data: {
           walletId: buyerWallet.id,
           type: "PURCHASE",
-          status: "COMPLETED",
-          amount: -amount,
-          currency: "TC",
-          listingId: listing.id,
-        },
-      });
-
-      await db.walletTransaction.create({
-        data: {
-          walletId: sellerWallet.id,
-          type: "SALE",
-          status: "COMPLETED",
-          amount,
+          status: "PENDING",
+          amount: -totalStars,
           currency: "TC",
           listingId: listing.id,
         },
@@ -112,10 +97,14 @@ export async function POST(_req: Request, context: { params: Promise<{ id: strin
 
       const updated = await db.listing.update({
         where: { id: listing.id },
-        data: { status: "SOLD", buyerId: buyer.id },
+        data: {
+          status: "RESERVED",
+          buyerId: buyer.id,
+          reservedAt: new Date(),
+          holdAmount: totalStars,
+          feeAmount: feeStars,
+        },
       });
-
-      await db.image.deleteMany({ where: { listingId: listing.id } });
 
       return updated;
     });

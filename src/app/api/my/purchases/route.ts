@@ -34,14 +34,18 @@ export async function GET() {
   });
 
   const listings = await prisma.listing.findMany({
-    where: { sellerId: user.id },
-    orderBy: { createdAt: "desc" },
+    where: {
+      buyerId: user.id,
+      status: { in: ["RESERVED", "SOLD"] },
+    },
+    orderBy: [{ reservedAt: "desc" }, { createdAt: "desc" }],
     include: {
       images: { select: { id: true } },
       tags: { include: { tag: true } },
       game: true,
       server: true,
       category: true,
+      seller: { select: { username: true, lastSeenAt: true } },
     },
   });
 
