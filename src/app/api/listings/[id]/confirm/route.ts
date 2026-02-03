@@ -16,7 +16,7 @@ function parseRubPrice(price: Prisma.Decimal): number | null {
   return value;
 }
 
-async function ensureTreasuryWallet(db: typeof prisma) {
+async function ensureTreasuryWallet(db: Prisma.TransactionClient | typeof prisma) {
   const user = await db.user.upsert({
     where: { telegramId: TREASURY_TELEGRAM_ID },
     update: {},
