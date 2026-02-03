@@ -857,25 +857,29 @@ function CreateListing({ catalog, initData, hasAuth }: { catalog: Game[]; initDa
     tagIds.forEach((id) => formData.append("tagIds", id));
     images.forEach((file) => formData.append("images", file));
 
-    const res = await fetch("/api/listings", {
-      method: "POST",
-      headers: initData ? { "x-telegram-init-data": initData } : undefined,
-      body: formData,
-    });
+    try {
+      const res = await fetch("/api/listings", {
+        method: "POST",
+        headers: initData ? { "x-telegram-init-data": initData } : undefined,
+        body: formData,
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        const message = formatApiError(data, res.statusText);
+        setStatus(`Ошибка: ${message}`);
+        return;
+      }
 
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      setStatus(`Ошибка: ${err.error?.message || err.error || res.statusText}`);
-      return;
+      setStatus("Лот создан");
+      setTitle("");
+      setDescription("");
+      setPrice("");
+      setTradeNote("");
+      setContactAlt("");
+      setImages([]);
+    } catch (error) {
+      setStatus(`Ошибка сети: ${error instanceof Error ? error.message : "неизвестно"}`);
     }
-
-    setStatus("Лот создан");
-    setTitle("");
-    setDescription("");
-    setPrice("");
-    setTradeNote("");
-    setContactAlt("");
-    setImages([]);
   };
 
   return (
@@ -1011,4 +1015,23 @@ function CreateListing({ catalog, initData, hasAuth }: { catalog: Game[]; initDa
       </div>
     </form>
   );
+}
+
+function formatApiError(payload: unknown, statusText: string) {
+  const data = payload as { error?: unknown; message?: string };
+  if (!data) return statusText || "Неизвестная ошибка";
+  if (typeof data.error === "string" && data.error) return data.error;
+  if (typeof data.message === "string" && data.message) return data.message;
+  if (data.error && typeof data.error === "object") {
+    const err = data.error as { message?: string; fieldErrors?: Record<string, string[]>; formErrors?: string[] };
+    if (err.message) return err.message;
+    if (err.formErrors?.length) return err.formErrors.join("; ");
+    if (err.fieldErrors) {
+      const parts = Object.entries(err.fieldErrors).flatMap(([field, messages]) =>
+        Array.isArray(messages) ? messages.map((m) => `${field}: ${m}`) : [],
+      );
+      if (parts.length) return parts.join("; ");
+    }
+  }
+  return statusText || "Неизвестная ошибка";
 }
