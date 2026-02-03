@@ -863,9 +863,17 @@ function CreateListing({ catalog, initData, hasAuth }: { catalog: Game[]; initDa
         headers: initData ? { "x-telegram-init-data": initData } : undefined,
         body: formData,
       });
-      const data = await res.json().catch(() => ({}));
+      const rawText = await res.text();
+      let data: unknown = {};
+      if (rawText) {
+        try {
+          data = JSON.parse(rawText);
+        } catch {
+          data = {};
+        }
+      }
       if (!res.ok) {
-        const message = formatApiError(data, res.statusText);
+        const message = formatApiError(data, res.status, res.statusText, rawText);
         setStatus(`Ошибка: ${message}`);
         return;
       }
@@ -1017,9 +1025,10 @@ function CreateListing({ catalog, initData, hasAuth }: { catalog: Game[]; initDa
   );
 }
 
-function formatApiError(payload: unknown, statusText: string) {
+function formatApiError(payload: unknown, status: number, statusText: string, rawText?: string) {
   const data = payload as { error?: unknown; message?: string };
-  if (!data) return statusText || "Неизвестная ошибка";
+  const fallback = statusText || `HTTP ${status}` || "Неизвестная ошибка";
+  if (!data) return fallback;
   if (typeof data.error === "string" && data.error) return data.error;
   if (typeof data.message === "string" && data.message) return data.message;
   if (data.error && typeof data.error === "object") {
@@ -1033,5 +1042,9 @@ function formatApiError(payload: unknown, statusText: string) {
       if (parts.length) return parts.join("; ");
     }
   }
-  return statusText || "Неизвестная ошибка";
+  if (rawText) {
+    const trimmed = rawText.replace(/\s+/g, " ").trim();
+    if (trimmed) return `${fallback}: ${trimmed.slice(0, 180)}`;
+  }
+  return fallback;
 }

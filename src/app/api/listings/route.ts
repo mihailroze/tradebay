@@ -141,88 +141,93 @@ export async function GET(req: Request) {
 }
 
 export async function POST(req: Request) {
-  const tgUser = await getAuthTelegramUser();
-  if (!tgUser) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-
-  const contentType = req.headers.get("content-type") || "";
-  const isMultipart = contentType.includes("multipart/form-data");
-  const { payload, images } = isMultipart ? await parseFormPayload(req) : { payload: await parseJsonPayload(req), images: [] };
-
-  const parsed = createSchema.safeParse(payload);
-  if (!parsed.success) {
-    return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
-  }
-
-  const parsedPayload = parsed.data;
-  const hasUsername = Boolean(tgUser.username);
-  const contactAlt = parsedPayload.contactAlt?.trim();
-  if (!hasUsername && !contactAlt) {
-    return NextResponse.json({ error: "Contact required" }, { status: 400 });
-  }
-
-  if (parsedPayload.type === "SALE") {
-    if (!parsedPayload.price || !parsedPayload.currency) {
-      return NextResponse.json({ error: "Price and currency required for sale" }, { status: 400 });
-    }
-    if (parsedPayload.currency.toUpperCase() === "RUB" && !Number.isInteger(parsedPayload.price)) {
-      return NextResponse.json({ error: "RUB price must be a whole number" }, { status: 400 });
-    }
-  }
-  if (parsedPayload.type === "TRADE" && !parsedPayload.tradeNote) {
-    return NextResponse.json({ error: "Trade note required for trade" }, { status: 400 });
-  }
-
-  const user = await prisma.user.upsert({
-    where: { telegramId: String(tgUser.id) },
-    update: {
-      username: tgUser.username ?? null,
-      displayName: [tgUser.first_name, tgUser.last_name].filter(Boolean).join(" ") || null,
-      lastSeenAt: new Date(),
-    },
-    create: {
-      telegramId: String(tgUser.id),
-      username: tgUser.username ?? null,
-      displayName: [tgUser.first_name, tgUser.last_name].filter(Boolean).join(" ") || null,
-      lastSeenAt: new Date(),
-    },
-  });
-
-  let imageCreates = [];
   try {
-    imageCreates = await buildImages(images);
+    const tgUser = await getAuthTelegramUser();
+    if (!tgUser) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const contentType = req.headers.get("content-type") || "";
+    const isMultipart = contentType.includes("multipart/form-data");
+    const { payload, images } = isMultipart ? await parseFormPayload(req) : { payload: await parseJsonPayload(req), images: [] };
+
+    const parsed = createSchema.safeParse(payload);
+    if (!parsed.success) {
+      return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
+    }
+
+    const parsedPayload = parsed.data;
+    const hasUsername = Boolean(tgUser.username);
+    const contactAlt = parsedPayload.contactAlt?.trim();
+    if (!hasUsername && !contactAlt) {
+      return NextResponse.json({ error: "Contact required" }, { status: 400 });
+    }
+
+    if (parsedPayload.type === "SALE") {
+      if (!parsedPayload.price || !parsedPayload.currency) {
+        return NextResponse.json({ error: "Price and currency required for sale" }, { status: 400 });
+      }
+      if (parsedPayload.currency.toUpperCase() === "RUB" && !Number.isInteger(parsedPayload.price)) {
+        return NextResponse.json({ error: "RUB price must be a whole number" }, { status: 400 });
+      }
+    }
+    if (parsedPayload.type === "TRADE" && !parsedPayload.tradeNote) {
+      return NextResponse.json({ error: "Trade note required for trade" }, { status: 400 });
+    }
+
+    const user = await prisma.user.upsert({
+      where: { telegramId: String(tgUser.id) },
+      update: {
+        username: tgUser.username ?? null,
+        displayName: [tgUser.first_name, tgUser.last_name].filter(Boolean).join(" ") || null,
+        lastSeenAt: new Date(),
+      },
+      create: {
+        telegramId: String(tgUser.id),
+        username: tgUser.username ?? null,
+        displayName: [tgUser.first_name, tgUser.last_name].filter(Boolean).join(" ") || null,
+        lastSeenAt: new Date(),
+      },
+    });
+
+    let imageCreates = [];
+    try {
+      imageCreates = await buildImages(images);
+    } catch (error) {
+      return NextResponse.json({ error: error instanceof Error ? error.message : "Image upload failed" }, { status: 400 });
+    }
+
+    const listing = await prisma.listing.create({
+      data: {
+        title: parsedPayload.title,
+        description: parsedPayload.description ?? null,
+        type: parsedPayload.type,
+        price: parsedPayload.price ?? null,
+        currency: parsedPayload.currency ? parsedPayload.currency.toUpperCase() : null,
+        tradeNote: parsedPayload.tradeNote ?? null,
+        contactAlt: contactAlt ?? null,
+        gameId: parsedPayload.gameId,
+        serverId: parsedPayload.serverId ?? null,
+        categoryId: parsedPayload.categoryId ?? null,
+        sellerId: user.id,
+        images: imageCreates.length
+          ? {
+              create: imageCreates,
+            }
+          : undefined,
+        tags: parsedPayload.tagIds
+          ? {
+              create: parsedPayload.tagIds.map((tagId) => ({ tagId })),
+            }
+          : undefined,
+      },
+    });
+
+    return NextResponse.json({ listing });
   } catch (error) {
-    return NextResponse.json({ error: error instanceof Error ? error.message : "Image upload failed" }, { status: 400 });
+    const message = error instanceof Error ? error.message : "Server error";
+    return NextResponse.json({ error: message }, { status: 500 });
   }
-
-  const listing = await prisma.listing.create({
-    data: {
-      title: parsedPayload.title,
-      description: parsedPayload.description ?? null,
-      type: parsedPayload.type,
-      price: parsedPayload.price ?? null,
-      currency: parsedPayload.currency ? parsedPayload.currency.toUpperCase() : null,
-      tradeNote: parsedPayload.tradeNote ?? null,
-      contactAlt: contactAlt ?? null,
-      gameId: parsedPayload.gameId,
-      serverId: parsedPayload.serverId ?? null,
-      categoryId: parsedPayload.categoryId ?? null,
-      sellerId: user.id,
-      images: imageCreates.length
-        ? {
-            create: imageCreates,
-          }
-        : undefined,
-      tags: parsedPayload.tagIds
-        ? {
-            create: parsedPayload.tagIds.map((tagId) => ({ tagId })),
-          }
-        : undefined,
-    },
-  });
-
-  return NextResponse.json({ listing });
 }
 
 async function parseJsonPayload(req: Request) {
