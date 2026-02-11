@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 import { normalizeEnvValue } from "@/lib/env";
 
 type Props = {
@@ -9,18 +9,20 @@ type Props = {
 
 export default function TelegramLogin({ onSuccess }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const [status, setStatus] = useState("");
+  const raw = normalizeEnvValue(process.env.NEXT_PUBLIC_TELEGRAM_BOT_USERNAME);
+  const username = raw.startsWith("@") ? raw.slice(1) : raw;
+  const status = username ? "" : "Set NEXT_PUBLIC_TELEGRAM_BOT_USERNAME";
+
+  void onSuccess;
 
   useEffect(() => {
-    const raw = normalizeEnvValue(process.env.NEXT_PUBLIC_TELEGRAM_BOT_USERNAME);
-    const username = raw.startsWith("@") ? raw.slice(1) : raw;
     if (!username) {
-      setStatus("Set NEXT_PUBLIC_TELEGRAM_BOT_USERNAME");
       return;
     }
 
-    if (!containerRef.current) return;
-    containerRef.current.innerHTML = "";
+    const container = containerRef.current;
+    if (!container) return;
+    container.innerHTML = "";
     const baseUrl = normalizeEnvValue(process.env.NEXT_PUBLIC_SITE_URL) || window.location.origin;
     const authUrl = new URL("/api/auth/telegram-login", baseUrl);
     const returnTo = new URL(
@@ -36,14 +38,12 @@ export default function TelegramLogin({ onSuccess }: Props) {
     script.setAttribute("data-auth-url", authUrl.toString());
     script.setAttribute("data-request-access", "write");
     script.setAttribute("data-userpic", "false");
-    containerRef.current.appendChild(script);
+    container.appendChild(script);
 
     return () => {
-      if (containerRef.current) {
-        containerRef.current.innerHTML = "";
-      }
+      container.innerHTML = "";
     };
-  }, [onSuccess]);
+  }, [username]);
 
   return (
     <div className="flex flex-col gap-2">

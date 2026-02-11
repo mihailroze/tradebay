@@ -90,16 +90,6 @@ function getListingIdFromUrl(): string {
   }
 }
 
-function getListingIdFromInitData(initData: string): string {
-  try {
-    const params = new URLSearchParams(initData);
-    const raw = params.get("start_param") || "";
-    return normalizeListingId(raw);
-  } catch {
-    return "";
-  }
-}
-
 function normalizeListingId(value: string): string {
   if (!value) return "";
   return value.startsWith("l_") ? value.slice(2) : value;
@@ -218,8 +208,6 @@ export default function Market() {
 
   useEffect(() => {
     if (!sharedListingId) {
-      setSharedListing(null);
-      setSharedError("");
       return;
     }
     const controller = new AbortController();
@@ -243,12 +231,6 @@ export default function Market() {
 
   useEffect(() => {
     if (!initData) return;
-    if (!sharedListingId) {
-      const fromInit = getListingIdFromInitData(initData);
-      if (fromInit) {
-        setSharedListingId(fromInit);
-      }
-    }
     const headers = initData ? { "x-telegram-init-data": initData } : undefined;
     fetch("/api/auth/me", { headers })
       .then((res) => res.json())
@@ -257,10 +239,7 @@ export default function Market() {
   }, [initData]);
 
   useEffect(() => {
-    if (!initData && !hasAuth) {
-      setWalletBalance(null);
-      return;
-    }
+    if (!initData && !hasAuth) return;
     fetch("/api/wallet", {
       headers: initData ? { "x-telegram-init-data": initData } : undefined,
     })
@@ -289,6 +268,8 @@ export default function Market() {
   const categories = game?.categories ?? [];
   const tags = game?.tags ?? [];
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const canUseWallet = Boolean(initData || hasAuth);
+  const displayedWalletBalance = canUseWallet ? walletBalance : null;
 
   const toggleFavorite = async (listingId: string, next: boolean) => {
     if (!initData && !hasAuth) {
@@ -628,8 +609,8 @@ export default function Market() {
                       Подтвердить сделку
                     </button>
                   ) : null}
-                  {walletBalance !== null ? (
-                    <span className="text-xs text-neutral-400">Баланс: {walletBalance} TC</span>
+                  {displayedWalletBalance !== null ? (
+                    <span className="text-xs text-neutral-400">Баланс: {displayedWalletBalance} TC</span>
                   ) : null}
                   <ContactButton listing={sharedListing} />
                 </div>
@@ -726,8 +707,8 @@ export default function Market() {
                       Подтвердить сделку
                     </button>
                   ) : null}
-                  {walletBalance !== null ? (
-                    <span className="text-xs text-neutral-400">Баланс: {walletBalance} TC</span>
+                  {displayedWalletBalance !== null ? (
+                    <span className="text-xs text-neutral-400">Баланс: {displayedWalletBalance} TC</span>
                   ) : null}
                   <ContactButton listing={listing} />
                 </div>

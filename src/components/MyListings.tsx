@@ -142,10 +142,7 @@ export default function MyListings() {
   }, [initData]);
 
   useEffect(() => {
-    if (!initData && !hasAuth) {
-      setWalletBalance(null);
-      return;
-    }
+    if (!initData && !hasAuth) return;
     fetch("/api/wallet", {
       headers: initData ? { "x-telegram-init-data": initData } : undefined,
     })
@@ -172,6 +169,9 @@ export default function MyListings() {
   useEffect(() => {
     loadListings();
   }, [initData, hasAuth]);
+
+  const canUseWallet = Boolean(initData || hasAuth);
+  const displayedWalletBalance = canUseWallet ? walletBalance : null;
 
   const updateStatus = async (id: string, nextStatus: Listing["status"]) => {
     if (!initData && !hasAuth) {
@@ -220,7 +220,7 @@ export default function MyListings() {
           <h2 className="text-2xl font-semibold tracking-tight">Мои лоты</h2>
           <div className="flex flex-wrap items-center gap-3 text-xs text-neutral-400">
             <span>{status}</span>
-            {walletBalance !== null ? <span>Баланс: {walletBalance} TC</span> : null}
+            {displayedWalletBalance !== null ? <span>Баланс: {displayedWalletBalance} TC</span> : null}
           </div>
         </header>
 

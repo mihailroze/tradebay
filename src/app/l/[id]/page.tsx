@@ -1,5 +1,6 @@
 ﻿import type { Metadata } from "next";
 import { headers } from "next/headers";
+import Link from "next/link";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { getListingPricing } from "@/lib/pricing";
@@ -136,12 +137,12 @@ export default async function ListingSharePage({ params }: PageProps) {
 
         <div className="flex flex-wrap items-center gap-3">
           <OpenInTelegram listingId={listing.id} />
-          <a
+          <Link
             href="/"
             className="inline-flex items-center justify-center rounded-full border border-neutral-800 px-4 py-2 text-xs font-semibold text-neutral-300 hover:border-white"
           >
             Открыть сайт
-          </a>
+          </Link>
         </div>
       </div>
     </div>

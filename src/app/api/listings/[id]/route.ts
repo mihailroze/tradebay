@@ -68,7 +68,13 @@ export async function GET(_req: Request, context: { params: Promise<{ id: string
     }
   }
 
-  const { telegramId, ...seller } = listing.seller ?? { telegramId: null };
+  const seller = listing.seller
+    ? {
+        id: listing.seller.id,
+        username: listing.seller.username,
+        lastSeenAt: listing.seller.lastSeenAt,
+      }
+    : null;
 
   return NextResponse.json({
     listing: {
