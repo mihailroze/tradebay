@@ -1,34 +1,16 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { getAuthTelegramUser, isAdminTelegramId } from "@/lib/auth";
+import { getEnvInt } from "@/lib/env";
+import { requireAdminUser } from "@/lib/admin";
 import { getRequestContext, reportServerError } from "@/lib/observability";
 
-async function ensureAdminUser() {
-  const tgUser = await getAuthTelegramUser();
-  if (!tgUser || !isAdminTelegramId(tgUser.id)) return null;
-
-  return prisma.user.upsert({
-    where: { telegramId: String(tgUser.id) },
-    update: {
-      username: tgUser.username ?? null,
-      displayName: [tgUser.first_name, tgUser.last_name].filter(Boolean).join(" ") || null,
-      lastSeenAt: new Date(),
-    },
-    create: {
-      telegramId: String(tgUser.id),
-      username: tgUser.username ?? null,
-      displayName: [tgUser.first_name, tgUser.last_name].filter(Boolean).join(" ") || null,
-      lastSeenAt: new Date(),
-    },
-    select: { id: true },
-  });
-}
+const DISPUTE_SLA_HOURS = getEnvInt("DISPUTE_SLA_HOURS", 24);
 
 export async function GET(req: Request) {
   const requestContext = getRequestContext(req, "/api/admin/disputes");
 
   try {
-    const admin = await ensureAdminUser();
+    const admin = await requireAdminUser();
     if (!admin) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
@@ -53,11 +35,45 @@ export async function GET(req: Request) {
             displayName: true,
           },
         },
+        disputeCase: {
+          include: {
+            events: {
+              orderBy: { createdAt: "desc" },
+              take: 8,
+              include: {
+                actorUser: {
+                  select: {
+                    telegramId: true,
+                    username: true,
+                    displayName: true,
+                  },
+                },
+              },
+            },
+          },
+        },
       },
       take: 200,
     });
 
-    return NextResponse.json({ disputes });
+    const now = Date.now();
+    const disputesWithMeta = disputes.map((item) => {
+      const openedAt = item.disputeCase?.openedAt ?? item.disputedAt ?? item.reservedAt;
+      const openedAtMs = openedAt ? new Date(openedAt).getTime() : null;
+      const slaDeadlineAt = item.disputeCase?.slaDeadlineAt
+        ? new Date(item.disputeCase.slaDeadlineAt)
+        : openedAtMs
+          ? new Date(openedAtMs + DISPUTE_SLA_HOURS * 60 * 60 * 1000)
+          : null;
+      const overdue = slaDeadlineAt ? now > slaDeadlineAt.getTime() : false;
+      return {
+        ...item,
+        slaDeadlineAt,
+        overdue,
+      };
+    });
+
+    return NextResponse.json({ disputes: disputesWithMeta, disputeSlaHours: DISPUTE_SLA_HOURS });
   } catch (error) {
     await reportServerError(error, requestContext);
     return NextResponse.json(

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { getAuthTelegramUser, isAdminTelegramId } from "@/lib/auth";
+import { requireAdminUser } from "@/lib/admin";
 import { getRequestContext, reportServerError } from "@/lib/observability";
 
 const patchSchema = z.object({
@@ -10,29 +10,9 @@ const patchSchema = z.object({
   adminNote: z.string().trim().max(500).optional(),
 });
 
-async function getAdminUserId() {
-  const tgUser = await getAuthTelegramUser();
-  if (!tgUser || !isAdminTelegramId(tgUser.id)) return null;
-  const admin = await prisma.user.upsert({
-    where: { telegramId: String(tgUser.id) },
-    update: {
-      username: tgUser.username ?? null,
-      displayName: [tgUser.first_name, tgUser.last_name].filter(Boolean).join(" ") || null,
-      lastSeenAt: new Date(),
-    },
-    create: {
-      telegramId: String(tgUser.id),
-      username: tgUser.username ?? null,
-      displayName: [tgUser.first_name, tgUser.last_name].filter(Boolean).join(" ") || null,
-      lastSeenAt: new Date(),
-    },
-  });
-  return admin.id;
-}
-
 export async function GET(req: Request) {
-  const adminId = await getAdminUserId();
-  if (!adminId) {
+  const admin = await requireAdminUser();
+  if (!admin) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
@@ -76,8 +56,8 @@ export async function PATCH(req: Request) {
   const requestContext = getRequestContext(req, "/api/admin/reports");
 
   try {
-    const adminId = await getAdminUserId();
-    if (!adminId) {
+    const admin = await requireAdminUser();
+    if (!admin) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
@@ -107,7 +87,7 @@ export async function PATCH(req: Request) {
           data: {
             status: "RESOLVED",
             adminNote: parsed.data.adminNote ?? null,
-            resolvedById: adminId,
+            resolvedById: admin.id,
             resolvedAt: now,
           },
         });
@@ -120,7 +100,7 @@ export async function PATCH(req: Request) {
       data: {
         status: parsed.data.action === "RESOLVE" ? "RESOLVED" : "REJECTED",
         adminNote: parsed.data.adminNote ?? null,
-        resolvedById: adminId,
+        resolvedById: admin.id,
         resolvedAt: now,
       },
     });
@@ -134,4 +114,3 @@ export async function PATCH(req: Request) {
     );
   }
 }
-

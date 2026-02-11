@@ -94,3 +94,58 @@ export async function notifyDealRefund(payload: DealNotificationPayload, reason:
   ]);
 }
 
+export async function notifyDisputeOpened(payload: {
+  listingId: string;
+  listingTitle: string;
+  buyerTelegramId?: string | null;
+  sellerTelegramId?: string | null;
+  reason: string;
+  slaHours: number;
+}) {
+  const link = listingLink(payload.listingId);
+  const buyerText = [
+    "TradeBay: dispute opened.",
+    `Listing: ${payload.listingTitle}`,
+    `Reason: ${payload.reason}`,
+    `SLA: up to ${payload.slaHours}h`,
+    link ? `Link: ${link}` : "",
+  ]
+    .filter(Boolean)
+    .join("\n");
+  const sellerText = [
+    "TradeBay: dispute opened by counterparty.",
+    `Listing: ${payload.listingTitle}`,
+    `Reason: ${payload.reason}`,
+    `SLA: up to ${payload.slaHours}h`,
+    link ? `Link: ${link}` : "",
+  ]
+    .filter(Boolean)
+    .join("\n");
+
+  await Promise.allSettled([
+    payload.buyerTelegramId ? sendTelegramMessage(payload.buyerTelegramId, buyerText) : Promise.resolve(false),
+    payload.sellerTelegramId ? sendTelegramMessage(payload.sellerTelegramId, sellerText) : Promise.resolve(false),
+  ]);
+}
+
+export async function notifyDisputeReview(payload: {
+  listingId: string;
+  listingTitle: string;
+  buyerTelegramId?: string | null;
+  sellerTelegramId?: string | null;
+  note?: string | null;
+}) {
+  const link = listingLink(payload.listingId);
+  const text = [
+    "TradeBay: dispute moved to in-review.",
+    `Listing: ${payload.listingTitle}`,
+    payload.note ? `Admin note: ${payload.note}` : "",
+    link ? `Link: ${link}` : "",
+  ]
+    .filter(Boolean)
+    .join("\n");
+  await Promise.allSettled([
+    payload.buyerTelegramId ? sendTelegramMessage(payload.buyerTelegramId, text) : Promise.resolve(false),
+    payload.sellerTelegramId ? sendTelegramMessage(payload.sellerTelegramId, text) : Promise.resolve(false),
+  ]);
+}

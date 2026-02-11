@@ -40,6 +40,31 @@ enum ReportStatus {
   REJECTED
 }
 
+enum DisputeCaseStatus {
+  OPEN
+  IN_REVIEW
+  RESOLVED_RELEASED
+  RESOLVED_REFUNDED
+}
+
+enum DisputeEventType {
+  OPENED
+  NOTE
+  MARK_IN_REVIEW
+  RESOLVED_RELEASE
+  RESOLVED_REFUND
+}
+
+enum SystemJobName {
+  ESCROW_RECONCILE
+}
+
+enum JobRunStatus {
+  RUNNING
+  SUCCESS
+  FAILED
+}
+
 model User {
   id          String   @id @default(cuid())
   telegramId  String   @unique
@@ -54,6 +79,9 @@ model User {
   favorites ListingFavorite[]
   reportsCreated ListingReport[] @relation("ListingReportReporter")
   reportsResolved ListingReport[] @relation("ListingReportResolver")
+  disputesOpened DisputeCase[] @relation("DisputeOpenedBy")
+  disputesAssigned DisputeCase[] @relation("DisputeAssignedAdmin")
+  disputeEvents DisputeCaseEvent[] @relation("DisputeCaseEventActor")
   wallet    Wallet?
 }
 
@@ -146,6 +174,7 @@ model Listing {
   favorites ListingFavorite[]
   walletTransactions WalletTransaction[]
   reports   ListingReport[]
+  disputeCase DisputeCase?
 
   @@index([gameId, serverId, categoryId, status])
   @@index([title])
@@ -208,6 +237,59 @@ model ListingReport {
   @@unique([listingId, reporterId])
   @@index([status, createdAt])
   @@index([listingId, status])
+}
+
+model DisputeCase {
+  id           String            @id @default(cuid())
+  listingId    String            @unique
+  status       DisputeCaseStatus @default(OPEN)
+  openedById   String
+  assignedAdminId String?
+  openedAt     DateTime          @default(now())
+  firstResponseAt DateTime?
+  resolvedAt   DateTime?
+  slaDeadlineAt DateTime?
+  resolutionTemplate String?
+  resolutionNote String?
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+
+  listing      Listing           @relation(fields: [listingId], references: [id], onDelete: Cascade)
+  openedBy     User              @relation("DisputeOpenedBy", fields: [openedById], references: [id], onDelete: Restrict)
+  assignedAdmin User?            @relation("DisputeAssignedAdmin", fields: [assignedAdminId], references: [id], onDelete: SetNull)
+  events       DisputeCaseEvent[]
+
+  @@index([status, openedAt])
+  @@index([slaDeadlineAt, status])
+}
+
+model DisputeCaseEvent {
+  id           String           @id @default(cuid())
+  disputeCaseId String
+  actorUserId  String?
+  type         DisputeEventType
+  note         String?
+  meta         Json?
+  createdAt    DateTime         @default(now())
+
+  disputeCase  DisputeCase      @relation(fields: [disputeCaseId], references: [id], onDelete: Cascade)
+  actorUser    User?            @relation("DisputeCaseEventActor", fields: [actorUserId], references: [id], onDelete: SetNull)
+
+  @@index([disputeCaseId, createdAt])
+}
+
+model SystemJobRun {
+  id          String       @id @default(cuid())
+  jobName     SystemJobName
+  startedAt   DateTime     @default(now())
+  finishedAt  DateTime?
+  status      JobRunStatus @default(RUNNING)
+  processed   Int          @default(0)
+  details     String?
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  @@index([jobName, startedAt])
 }
 
 model ListingFavorite {

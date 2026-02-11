@@ -1,583 +1,328 @@
-﻿"use client";
+"use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import TopNav from "@/components/TopNav";
 
-type Game = {
-  id: string;
-  name: string;
-  servers: { id: string; name: string }[];
-  categories: { id: string; name: string; parentId?: string | null }[];
-  tags: { id: string; name: string }[];
-};
-
+type Game = { id: string; name: string; servers: { id: string; name: string }[]; categories: { id: string; name: string }[]; tags: { id: string; name: string }[] };
 type CatalogResponse = { games: Game[] };
-
-type AuthInfo = {
-  ok: boolean;
-  error?: string;
-  isAdmin?: boolean;
-  user?: {
-    id: number;
-    username: string | null;
-    firstName: string | null;
-    lastName: string | null;
-  };
-};
-
-type ListingReport = {
+type AuthInfo = { ok: boolean; isAdmin?: boolean; error?: string; user?: { id: number } };
+type Report = {
   id: string;
   reason: string;
   status: "OPEN" | "RESOLVED" | "REJECTED";
   createdAt: string;
-  adminNote: string | null;
-  listing: {
-    id: string;
-    title: string;
-    status: string;
-    seller: { telegramId: string; username: string | null } | null;
-  };
+  listing: { id: string; title: string };
   reporter: { telegramId: string; username: string | null };
-  resolvedBy: { telegramId: string; username: string | null } | null;
 };
-
-type ReportsResponse = { reports: ListingReport[] };
-
-type DisputeListing = {
+type ReportsResponse = { reports: Report[] };
+type Dispute = {
   id: string;
   title: string;
-  status: "RESERVED" | "DISPUTED" | "SOLD" | "ACTIVE" | "HIDDEN";
+  status: string;
   disputedAt: string | null;
-  disputeReason: string | null;
-  reservedAt: string | null;
   reservationExpiresAt: string | null;
+  slaDeadlineAt: string | null;
+  overdue: boolean;
   holdAmount: number | null;
   feeAmount: number | null;
-  seller: { telegramId: string; username: string | null; displayName: string | null } | null;
-  buyer: { telegramId: string; username: string | null; displayName: string | null } | null;
+  buyer: { telegramId: string; username: string | null } | null;
+  seller: { telegramId: string; username: string | null } | null;
+  disputeCase: {
+    status: string;
+    events: Array<{ id: string; type: string; note: string | null; createdAt: string }>;
+  } | null;
+};
+type DisputesResponse = { disputes: Dispute[]; disputeSlaHours: number };
+type Reconcile = {
+  stale: boolean;
+  maxDelayMinutes: number;
+  stats24h: { runs: number; failedRuns: number; processed: number };
+  lastRun: { startedAt: string; status: string; processed: number } | null;
+};
+type Finance = {
+  totals: {
+    totalBalance: number;
+    totalLocked: number;
+    expectedSupplyFromTopups: number;
+    actualSupply: number;
+    supplyDiff: number;
+    openDisputes: number;
+  };
+  byDay: Array<{ day: string; type: string; status: string; count: number; amount: number }>;
 };
 
-type DisputesResponse = { disputes: DisputeListing[] };
-
-function readInitDataFromUrl(): string {
-  try {
-    const searchParams = new URLSearchParams(window.location.search);
-    const hash = window.location.hash.replace(/^#/, "");
-    const hashParams = new URLSearchParams(hash);
-    const raw =
-      searchParams.get("tgWebAppData") ||
-      searchParams.get("initData") ||
-      hashParams.get("tgWebAppData") ||
-      hashParams.get("initData") ||
-      "";
-    if (!raw) return "";
-    try {
-      return decodeURIComponent(raw);
-    } catch {
-      return raw;
-    }
-  } catch {
-    return "";
-  }
-}
-
-function getInitData(): string {
+function getInitData() {
   if (typeof window === "undefined") return "";
   const tg = (window as unknown as { Telegram?: { WebApp?: { initData?: string; ready?: () => void } } }).Telegram;
   tg?.WebApp?.ready?.();
-  const fromTelegram = tg?.WebApp?.initData || "";
-  const fromUrl = readInitDataFromUrl();
-  const cached = window.sessionStorage.getItem("tg_init_data") || "";
-  const value = fromTelegram || fromUrl || cached;
-  if (value) window.sessionStorage.setItem("tg_init_data", value);
-  return value;
+  return tg?.WebApp?.initData || window.sessionStorage.getItem("tg_init_data") || "";
 }
-
-function formatDate(value: string | null | undefined) {
-  if (!value) return "-";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "-";
-  return date.toLocaleString("ru-RU");
+function formatDate(v: string | null | undefined) {
+  if (!v) return "-";
+  const d = new Date(v);
+  return Number.isNaN(d.getTime()) ? "-" : d.toLocaleString("ru-RU");
+}
+function toPrettyAmount(value: number | null | undefined) {
+  return Number(value || 0).toLocaleString("ru-RU");
 }
 
 export default function AdminPanel() {
-  const [catalog, setCatalog] = useState<Game[]>([]);
-  const [authInfo, setAuthInfo] = useState<AuthInfo | null>(null);
   const [initData, setInitData] = useState("");
+  const [auth, setAuth] = useState<AuthInfo | null>(null);
   const [status, setStatus] = useState("");
-  const [reports, setReports] = useState<ListingReport[]>([]);
+  const [catalog, setCatalog] = useState<Game[]>([]);
   const [reportFilter, setReportFilter] = useState<"OPEN" | "RESOLVED" | "REJECTED" | "ALL">("OPEN");
-  const [disputes, setDisputes] = useState<DisputeListing[]>([]);
+  const [reports, setReports] = useState<Report[]>([]);
+  const [disputes, setDisputes] = useState<Dispute[]>([]);
+  const [disputeSlaHours, setDisputeSlaHours] = useState(24);
+  const [reconcile, setReconcile] = useState<Reconcile | null>(null);
+  const [finance, setFinance] = useState<Finance | null>(null);
+  const [financeDays, setFinanceDays] = useState("30");
+  const [batchSize, setBatchSize] = useState("100");
 
   const [gameName, setGameName] = useState("");
   const [serverName, setServerName] = useState("");
   const [serverGameId, setServerGameId] = useState("");
   const [categoryName, setCategoryName] = useState("");
   const [categoryGameId, setCategoryGameId] = useState("");
-  const [categoryParentId, setCategoryParentId] = useState("");
   const [tagName, setTagName] = useState("");
   const [tagGameId, setTagGameId] = useState("");
 
   useEffect(() => {
-    let attempts = 0;
+    let retries = 0;
     const read = () => {
-      const value = getInitData();
-      if (value) {
-        setInitData(value);
+      const v = getInitData();
+      if (v) {
+        setInitData(v);
+        window.sessionStorage.setItem("tg_init_data", v);
         return;
       }
-      if (attempts < 15) {
-        attempts += 1;
+      if (retries < 12) {
+        retries += 1;
         setTimeout(read, 300);
       }
     };
     read();
   }, []);
 
-  const authHeaders = useMemo(() => {
-    return initData ? { "x-telegram-init-data": initData } : undefined;
-  }, [initData]);
+  const headers = useMemo(() => (initData ? { "x-telegram-init-data": initData } : undefined), [initData]);
+  const canAdmin = Boolean(auth?.ok && auth.isAdmin);
 
   const loadCatalog = useCallback(() => {
-    fetch("/api/catalog")
-      .then((res) => res.json())
-      .then((data: CatalogResponse) => setCatalog(data.games || []))
-      .catch(() => setCatalog([]));
+    fetch("/api/catalog").then((r) => r.json()).then((d: CatalogResponse) => setCatalog(d.games || [])).catch(() => setCatalog([]));
   }, []);
-
   const loadReports = useCallback(() => {
-    const query = reportFilter === "ALL" ? "" : `?status=${reportFilter}`;
-    fetch(`/api/admin/reports${query}`, { headers: authHeaders })
-      .then((res) => (res.ok ? res.json() : Promise.reject(res)))
-      .then((data: ReportsResponse) => setReports(data.reports || []))
-      .catch(() => setReports([]));
-  }, [authHeaders, reportFilter]);
-
+    const q = reportFilter === "ALL" ? "" : `?status=${reportFilter}`;
+    fetch(`/api/admin/reports${q}`, { headers }).then((r) => (r.ok ? r.json() : Promise.reject())).then((d: ReportsResponse) => setReports(d.reports || [])).catch(() => setReports([]));
+  }, [headers, reportFilter]);
   const loadDisputes = useCallback(() => {
-    fetch("/api/admin/disputes", { headers: authHeaders })
-      .then((res) => (res.ok ? res.json() : Promise.reject(res)))
-      .then((data: DisputesResponse) => setDisputes(data.disputes || []))
-      .catch(() => setDisputes([]));
-  }, [authHeaders]);
+    fetch("/api/admin/disputes", { headers }).then((r) => (r.ok ? r.json() : Promise.reject())).then((d: DisputesResponse) => {
+      setDisputes(d.disputes || []);
+      setDisputeSlaHours(d.disputeSlaHours || 24);
+    }).catch(() => setDisputes([]));
+  }, [headers]);
+  const loadOps = useCallback(() => {
+    fetch("/api/admin/ops/reconcile", { headers }).then((r) => (r.ok ? r.json() : Promise.reject())).then((d) => setReconcile(d)).catch(() => setReconcile(null));
+  }, [headers]);
+  const loadFinance = useCallback(() => {
+    const days = Math.max(1, Math.min(90, Number(financeDays) || 30));
+    fetch(`/api/admin/finance/summary?days=${days}`, { headers }).then((r) => (r.ok ? r.json() : Promise.reject())).then((d) => setFinance(d.summary || null)).catch(() => setFinance(null));
+  }, [headers, financeDays]);
 
   useEffect(() => {
     loadCatalog();
   }, [loadCatalog]);
-
   useEffect(() => {
-    fetch("/api/auth/me", { headers: authHeaders })
-      .then((res) => res.json())
-      .then((data: AuthInfo) => setAuthInfo(data))
-      .catch(() => setAuthInfo({ ok: false, error: "Failed to load auth info" }));
-  }, [authHeaders]);
-
+    fetch("/api/auth/me", { headers }).then((r) => r.json()).then((d: AuthInfo) => setAuth(d)).catch(() => setAuth({ ok: false, error: "auth_failed" }));
+  }, [headers]);
   useEffect(() => {
-    if (!authInfo?.ok || !authInfo.isAdmin) return;
+    if (!canAdmin) return;
     loadReports();
     loadDisputes();
-  }, [authInfo?.ok, authInfo?.isAdmin, loadReports, loadDisputes]);
+    loadOps();
+    loadFinance();
+  }, [canAdmin, loadReports, loadDisputes, loadOps, loadFinance]);
 
   const createEntity = async (url: string, payload: Record<string, unknown>) => {
-    if (!authInfo?.ok) {
-      setStatus("Войдите через Telegram, чтобы управлять каталогом.");
-      return;
-    }
-
     setStatus("Сохраняем...");
-    const res = await fetch(url, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        ...(authHeaders || {}),
-      },
-      body: JSON.stringify(payload),
-    });
-
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({} as { error?: unknown }));
-      const message =
-        typeof err.error === "string"
-          ? err.error
-          : res.statusText || "Ошибка сохранения";
-      setStatus(`Ошибка: ${message}`);
+    const r = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json", ...(headers || {}) }, body: JSON.stringify(payload) });
+    if (!r.ok) {
+      const e = await r.json().catch(() => ({}));
+      setStatus(`Ошибка: ${String((e as { error?: string }).error || r.statusText)}`);
       return;
     }
-
     setStatus("Готово");
     loadCatalog();
   };
-
-  const updateReport = async (reportId: string, action: "RESOLVE" | "REJECT" | "HIDE_LISTING") => {
-    const adminNote = window.prompt("Комментарий модератора (необязательно):", "") || undefined;
-    setStatus("Обновляем жалобу...");
-
-    const res = await fetch("/api/admin/reports", {
-      method: "PATCH",
-      headers: {
-        "Content-Type": "application/json",
-        ...(authHeaders || {}),
-      },
-      body: JSON.stringify({ reportId, action, adminNote }),
-    });
-
-    if (!res.ok) {
-      const data = await res.json().catch(() => ({} as { error?: unknown }));
-      setStatus(typeof data.error === "string" ? data.error : "Не удалось обновить жалобу");
-      return;
-    }
-
-    setStatus("Жалоба обновлена");
+  const patchReport = async (reportId: string, action: "RESOLVE" | "REJECT" | "HIDE_LISTING") => {
+    const adminNote = window.prompt("Комментарий:", "") || undefined;
+    const r = await fetch("/api/admin/reports", { method: "PATCH", headers: { "Content-Type": "application/json", ...(headers || {}) }, body: JSON.stringify({ reportId, action, adminNote }) });
+    setStatus(r.ok ? "Жалоба обновлена" : "Ошибка обновления жалобы");
     loadReports();
   };
-
-  const resolveDispute = async (listingId: string, action: "RELEASE" | "REFUND") => {
-    const note = window.prompt("Комментарий/причина (необязательно):", "") || undefined;
-    setStatus("Решаем спор...");
-
-    const res = await fetch(`/api/admin/disputes/${listingId}`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        ...(authHeaders || {}),
-      },
-      body: JSON.stringify({ action, note }),
-    });
-
-    if (!res.ok) {
-      const data = await res.json().catch(() => ({} as { error?: unknown }));
-      setStatus(typeof data.error === "string" ? data.error : "Не удалось решить спор");
-      return;
-    }
-
-    setStatus("Спор обработан");
+  const disputeAction = async (listingId: string, action: "SET_IN_REVIEW" | "RELEASE" | "REFUND") => {
+    const note = window.prompt("Комментарий:", "") || undefined;
+    const template = (window.prompt("Шаблон (OTHER/ITEM_NOT_DELIVERED/...):", "OTHER") || "OTHER").toUpperCase();
+    const r = await fetch(`/api/admin/disputes/${listingId}`, { method: "POST", headers: { "Content-Type": "application/json", ...(headers || {}) }, body: JSON.stringify({ action, note, template }) });
+    setStatus(r.ok ? "Спор обработан" : "Ошибка обработки спора");
     loadDisputes();
-    loadReports();
+    loadFinance();
+  };
+  const runReconcile = async () => {
+    const batch = Math.max(1, Math.min(500, Number(batchSize) || 100));
+    const r = await fetch("/api/admin/ops/reconcile", { method: "POST", headers: { "Content-Type": "application/json", ...(headers || {}) }, body: JSON.stringify({ batchSize: batch }) });
+    const d = await r.json().catch(() => ({}));
+    setStatus(r.ok ? `Reconcile: ${String((d as { processed?: number }).processed || 0)}` : "Ошибка reconcile");
+    loadOps();
+    loadDisputes();
+    loadFinance();
   };
 
-  const selectedGameForCategory = catalog.find((game) => game.id === categoryGameId);
-
-  const canUseAdmin = Boolean(authInfo?.ok && authInfo?.isAdmin);
+  const selectedCategoryGame = catalog.find((g) => g.id === categoryGameId);
 
   return (
     <div className="min-h-screen bg-neutral-950 text-neutral-100">
-      <div className="mx-auto flex w-full max-w-6xl flex-col gap-8 px-5 py-10">
+      <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-5 py-10">
         <TopNav />
-
-        <header className="flex flex-col gap-2">
+        <header>
           <h2 className="text-2xl font-semibold tracking-tight">Админ-панель</h2>
-          <p className="text-sm text-neutral-400">Каталог, жалобы и споры.</p>
-          {authInfo?.ok ? (
-            <p className="text-xs text-neutral-400">
-              TG ID: {authInfo.user?.id} · Admin: {authInfo.isAdmin ? "yes" : "no"}
-            </p>
-          ) : authInfo?.error ? (
-            <p className="text-xs text-amber-400">Auth: {authInfo.error}</p>
-          ) : null}
+          <p className="text-xs text-neutral-400">{auth?.ok ? `TG ID: ${auth.user?.id} · Admin: ${auth.isAdmin ? "yes" : "no"}` : `Auth: ${auth?.error || "-"}`}</p>
           <p className="text-xs text-neutral-500">{status}</p>
         </header>
 
-        {!canUseAdmin ? (
-          <section className="rounded-3xl border border-neutral-800 bg-neutral-900 p-6 text-sm text-amber-300">
-            Откройте страницу из Telegram Web App под админ-аккаунтом.
-          </section>
-        ) : null}
+        {!canAdmin ? <section className="rounded-3xl border border-neutral-800 bg-neutral-900 p-6 text-sm text-amber-300">Откройте страницу из Telegram Web App под админом.</section> : null}
 
-        {canUseAdmin ? (
-          <section className="grid gap-6 md:grid-cols-2">
-            <form
-              onSubmit={(event) => {
-                event.preventDefault();
-                if (!gameName.trim()) return;
-                createEntity("/api/admin/games", { name: gameName.trim() });
-                setGameName("");
-              }}
-              className="rounded-3xl border border-neutral-800 bg-neutral-900 p-6"
-            >
-              <h3 className="text-lg font-semibold">Игры</h3>
-              <input
-                value={gameName}
-                onChange={(event) => setGameName(event.target.value)}
-                placeholder="Название игры"
-                className="mt-3 w-full rounded-2xl border border-neutral-800 bg-neutral-950 px-4 py-3 text-sm outline-none focus:border-neutral-500"
-                required
-              />
-              <button className="mt-4 rounded-full bg-white px-4 py-2 text-xs font-semibold text-black">Добавить</button>
-            </form>
-
-            <form
-              onSubmit={(event) => {
-                event.preventDefault();
-                if (!serverName.trim() || !serverGameId) return;
-                createEntity("/api/admin/servers", { name: serverName.trim(), gameId: serverGameId });
-                setServerName("");
-              }}
-              className="rounded-3xl border border-neutral-800 bg-neutral-900 p-6"
-            >
-              <h3 className="text-lg font-semibold">Серверы</h3>
-              <select
-                value={serverGameId}
-                onChange={(event) => setServerGameId(event.target.value)}
-                className="mt-3 w-full rounded-2xl border border-neutral-800 bg-neutral-950 px-4 py-3 text-sm outline-none focus:border-neutral-500"
-                required
-              >
-                <option value="">Выберите игру</option>
-                {catalog.map((game) => (
-                  <option key={game.id} value={game.id}>
-                    {game.name}
-                  </option>
-                ))}
-              </select>
-              <input
-                value={serverName}
-                onChange={(event) => setServerName(event.target.value)}
-                placeholder="Название сервера"
-                className="mt-3 w-full rounded-2xl border border-neutral-800 bg-neutral-950 px-4 py-3 text-sm outline-none focus:border-neutral-500"
-                required
-              />
-              <button className="mt-4 rounded-full bg-white px-4 py-2 text-xs font-semibold text-black">Добавить</button>
-            </form>
-
-            <form
-              onSubmit={(event) => {
-                event.preventDefault();
-                if (!categoryName.trim() || !categoryGameId) return;
-                createEntity("/api/admin/categories", {
-                  name: categoryName.trim(),
-                  gameId: categoryGameId,
-                  parentId: categoryParentId || null,
-                });
-                setCategoryName("");
-              }}
-              className="rounded-3xl border border-neutral-800 bg-neutral-900 p-6"
-            >
-              <h3 className="text-lg font-semibold">Категории</h3>
-              <select
-                value={categoryGameId}
-                onChange={(event) => {
-                  setCategoryGameId(event.target.value);
-                  setCategoryParentId("");
-                }}
-                className="mt-3 w-full rounded-2xl border border-neutral-800 bg-neutral-950 px-4 py-3 text-sm outline-none focus:border-neutral-500"
-                required
-              >
-                <option value="">Выберите игру</option>
-                {catalog.map((game) => (
-                  <option key={game.id} value={game.id}>
-                    {game.name}
-                  </option>
-                ))}
-              </select>
-              <input
-                value={categoryName}
-                onChange={(event) => setCategoryName(event.target.value)}
-                placeholder="Название категории"
-                className="mt-3 w-full rounded-2xl border border-neutral-800 bg-neutral-950 px-4 py-3 text-sm outline-none focus:border-neutral-500"
-                required
-              />
-              <select
-                value={categoryParentId}
-                onChange={(event) => setCategoryParentId(event.target.value)}
-                className="mt-3 w-full rounded-2xl border border-neutral-800 bg-neutral-950 px-4 py-3 text-sm outline-none focus:border-neutral-500"
-              >
-                <option value="">Без родителя</option>
-                {selectedGameForCategory?.categories.map((category) => (
-                  <option key={category.id} value={category.id}>
-                    {category.name}
-                  </option>
-                ))}
-              </select>
-              <button className="mt-4 rounded-full bg-white px-4 py-2 text-xs font-semibold text-black">Добавить</button>
-            </form>
-
-            <form
-              onSubmit={(event) => {
-                event.preventDefault();
-                if (!tagName.trim() || !tagGameId) return;
-                createEntity("/api/admin/tags", { name: tagName.trim(), gameId: tagGameId });
-                setTagName("");
-              }}
-              className="rounded-3xl border border-neutral-800 bg-neutral-900 p-6"
-            >
-              <h3 className="text-lg font-semibold">Теги</h3>
-              <select
-                value={tagGameId}
-                onChange={(event) => setTagGameId(event.target.value)}
-                className="mt-3 w-full rounded-2xl border border-neutral-800 bg-neutral-950 px-4 py-3 text-sm outline-none focus:border-neutral-500"
-                required
-              >
-                <option value="">Выберите игру</option>
-                {catalog.map((game) => (
-                  <option key={game.id} value={game.id}>
-                    {game.name}
-                  </option>
-                ))}
-              </select>
-              <input
-                value={tagName}
-                onChange={(event) => setTagName(event.target.value)}
-                placeholder="Название тега"
-                className="mt-3 w-full rounded-2xl border border-neutral-800 bg-neutral-950 px-4 py-3 text-sm outline-none focus:border-neutral-500"
-                required
-              />
-              <button className="mt-4 rounded-full bg-white px-4 py-2 text-xs font-semibold text-black">Добавить</button>
-            </form>
-          </section>
-        ) : null}
-
-        {canUseAdmin ? (
+        {canAdmin ? (
           <section className="rounded-3xl border border-neutral-800 bg-neutral-900 p-6">
             <div className="flex flex-wrap items-center justify-between gap-3">
-              <h3 className="text-lg font-semibold">Жалобы</h3>
+              <h3 className="text-lg font-semibold">Ops / Reconcile</h3>
+              <button className="rounded-full border border-neutral-700 px-3 py-2 text-xs hover:border-white" onClick={loadOps}>Обновить</button>
+            </div>
+            {reconcile ? (
+              <>
+                <p className="mt-2 text-xs text-neutral-300">Stale: {String(reconcile.stale)} · Max delay: {reconcile.maxDelayMinutes}m · Last run: {formatDate(reconcile.lastRun?.startedAt)} · Last status: {reconcile.lastRun?.status || "-"}</p>
+                <p className="mt-1 text-xs text-neutral-400">24h: runs {reconcile.stats24h.runs}, failed {reconcile.stats24h.failedRuns}, processed {reconcile.stats24h.processed}</p>
+              </>
+            ) : null}
+            <div className="mt-3 flex items-center gap-2">
+              <input value={batchSize} onChange={(e) => setBatchSize(e.target.value)} className="w-24 rounded-2xl border border-neutral-800 bg-neutral-950 px-3 py-2 text-xs outline-none focus:border-neutral-500" />
+              <button className="rounded-full border border-emerald-500/70 px-3 py-2 text-xs text-emerald-200 hover:border-emerald-300" onClick={runReconcile}>Запустить reconcile</button>
+            </div>
+          </section>
+        ) : null}
+
+        {canAdmin ? (
+          <section className="rounded-3xl border border-neutral-800 bg-neutral-900 p-6">
+            <div className="flex items-center justify-between gap-3">
+              <h3 className="text-lg font-semibold">Finance</h3>
               <div className="flex items-center gap-2">
-                <select
-                  value={reportFilter}
-                  onChange={(event) => setReportFilter(event.target.value as "OPEN" | "RESOLVED" | "REJECTED" | "ALL")}
-                  className="rounded-full border border-neutral-700 bg-neutral-950 px-3 py-2 text-xs"
-                >
-                  <option value="OPEN">Открытые</option>
-                  <option value="RESOLVED">Решенные</option>
-                  <option value="REJECTED">Отклоненные</option>
-                  <option value="ALL">Все</option>
-                </select>
-                <button
-                  className="rounded-full border border-neutral-700 px-3 py-2 text-xs hover:border-white"
-                  onClick={loadReports}
-                >
-                  Обновить
-                </button>
+                <input value={financeDays} onChange={(e) => setFinanceDays(e.target.value)} className="w-16 rounded-2xl border border-neutral-800 bg-neutral-950 px-3 py-2 text-xs outline-none focus:border-neutral-500" />
+                <button className="rounded-full border border-neutral-700 px-3 py-2 text-xs hover:border-white" onClick={loadFinance}>Обновить</button>
               </div>
             </div>
-
-            <div className="mt-4 grid gap-3">
-              {reports.length ? (
-                reports.map((report) => (
-                  <article key={report.id} className="rounded-2xl border border-neutral-800 bg-neutral-950 p-4">
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <p className="text-sm font-semibold">{report.listing.title}</p>
-                      <span className="rounded-full border border-neutral-700 px-2 py-1 text-[11px] uppercase tracking-wider">
-                        {report.status}
-                      </span>
-                    </div>
-                    <p className="mt-1 text-xs text-neutral-400">
-                      listing: {report.listing.id} · seller: {report.listing.seller?.username ? `@${report.listing.seller.username}` : report.listing.seller?.telegramId || "-"}
-                    </p>
-                    <p className="mt-1 text-xs text-neutral-400">
-                      reporter: {report.reporter.username ? `@${report.reporter.username}` : report.reporter.telegramId} · {formatDate(report.createdAt)}
-                    </p>
-                    <p className="mt-2 text-sm text-neutral-200">{report.reason}</p>
-                    {report.adminNote ? <p className="mt-2 text-xs text-neutral-500">Note: {report.adminNote}</p> : null}
-
-                    {report.status === "OPEN" ? (
-                      <div className="mt-3 flex flex-wrap gap-2">
-                        <button
-                          className="rounded-full border border-emerald-400/70 px-3 py-1 text-xs text-emerald-200 hover:border-emerald-300"
-                          onClick={() => updateReport(report.id, "RESOLVE")}
-                        >
-                          Resolve
-                        </button>
-                        <button
-                          className="rounded-full border border-amber-400/70 px-3 py-1 text-xs text-amber-200 hover:border-amber-300"
-                          onClick={() => updateReport(report.id, "REJECT")}
-                        >
-                          Reject
-                        </button>
-                        <button
-                          className="rounded-full border border-red-400/70 px-3 py-1 text-xs text-red-200 hover:border-red-300"
-                          onClick={() => updateReport(report.id, "HIDE_LISTING")}
-                        >
-                          Hide listing
-                        </button>
-                      </div>
-                    ) : null}
-                  </article>
-                ))
-              ) : (
-                <p className="text-sm text-neutral-500">Жалоб нет.</p>
-              )}
-            </div>
-          </section>
-        ) : null}
-
-        {canUseAdmin ? (
-          <section className="rounded-3xl border border-neutral-800 bg-neutral-900 p-6">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <h3 className="text-lg font-semibold">Споры / эскроу</h3>
-              <button
-                className="rounded-full border border-neutral-700 px-3 py-2 text-xs hover:border-white"
-                onClick={loadDisputes}
-              >
-                Обновить
-              </button>
-            </div>
-
-            <div className="mt-4 grid gap-3">
-              {disputes.length ? (
-                disputes.map((item) => (
-                  <article key={item.id} className="rounded-2xl border border-neutral-800 bg-neutral-950 p-4">
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <p className="text-sm font-semibold">{item.title}</p>
-                      <span className="rounded-full border border-neutral-700 px-2 py-1 text-[11px] uppercase tracking-wider">
-                        {item.status}
-                      </span>
-                    </div>
-                    <p className="mt-1 text-xs text-neutral-400">listing: {item.id}</p>
-                    <p className="mt-1 text-xs text-neutral-400">
-                      buyer: {item.buyer?.username ? `@${item.buyer.username}` : item.buyer?.telegramId || "-"}
-                    </p>
-                    <p className="mt-1 text-xs text-neutral-400">
-                      seller: {item.seller?.username ? `@${item.seller.username}` : item.seller?.telegramId || "-"}
-                    </p>
-                    <p className="mt-1 text-xs text-neutral-400">
-                      hold: {item.holdAmount ?? 0} TC · fee: {item.feeAmount ?? 0} TC
-                    </p>
-                    <p className="mt-1 text-xs text-neutral-400">
-                      reservedAt: {formatDate(item.reservedAt)} · expiresAt: {formatDate(item.reservationExpiresAt)}
-                    </p>
-                    {item.disputeReason ? <p className="mt-2 text-sm text-neutral-200">{item.disputeReason}</p> : null}
-
-                    <div className="mt-3 flex flex-wrap gap-2">
-                      <button
-                        className="rounded-full border border-emerald-400/70 px-3 py-1 text-xs text-emerald-200 hover:border-emerald-300"
-                        onClick={() => resolveDispute(item.id, "RELEASE")}
-                      >
-                        Release to seller
-                      </button>
-                      <button
-                        className="rounded-full border border-amber-400/70 px-3 py-1 text-xs text-amber-200 hover:border-amber-300"
-                        onClick={() => resolveDispute(item.id, "REFUND")}
-                      >
-                        Refund buyer
-                      </button>
-                    </div>
-                  </article>
-                ))
-              ) : (
-                <p className="text-sm text-neutral-500">Активных споров/эскроу нет.</p>
-              )}
-            </div>
-          </section>
-        ) : null}
-
-        {canUseAdmin ? (
-          <section className="rounded-3xl border border-neutral-800 bg-neutral-900 p-6">
-            <h3 className="text-lg font-semibold">Текущий каталог</h3>
-            <div className="mt-4 grid gap-4 md:grid-cols-2">
-              {catalog.map((game) => (
-                <div key={game.id} className="rounded-2xl border border-neutral-800 bg-neutral-950 p-4">
-                  <h4 className="text-sm font-semibold">{game.name}</h4>
-                  <p className="mt-2 text-xs text-neutral-400">
-                    Серверов: {game.servers.length} · Категорий: {game.categories.length} · Тегов: {game.tags.length}
-                  </p>
-                  <div className="mt-2 flex flex-wrap gap-2 text-xs text-neutral-500">
-                    {game.categories.slice(0, 6).map((category) => (
-                      <span key={category.id} className="rounded-full border border-neutral-800 px-2 py-1">
-                        {category.name}
-                      </span>
-                    ))}
-                  </div>
+            {finance ? (
+              <>
+                <p className="mt-2 text-xs text-neutral-300">Balance: {toPrettyAmount(finance.totals.totalBalance)} · Locked: {toPrettyAmount(finance.totals.totalLocked)} · Expected: {toPrettyAmount(finance.totals.expectedSupplyFromTopups)} · Actual: {toPrettyAmount(finance.totals.actualSupply)} · Diff: {toPrettyAmount(finance.totals.supplyDiff)} · Open disputes: {finance.totals.openDisputes}</p>
+                <div className="mt-3 max-h-52 overflow-auto rounded-2xl border border-neutral-800 bg-neutral-950 p-3 text-xs">
+                  {finance.byDay.slice(0, 40).map((row, idx) => (
+                    <p key={`${row.day}-${row.type}-${idx}`} className="text-neutral-300">{row.day} · {row.type} · {row.status} · count {row.count} · amount {toPrettyAmount(row.amount)}</p>
+                  ))}
                 </div>
-              ))}
+              </>
+            ) : <p className="mt-2 text-xs text-neutral-500">Нет данных.</p>}
+          </section>
+        ) : null}
+
+        {canAdmin ? (
+          <section className="rounded-3xl border border-neutral-800 bg-neutral-900 p-6">
+            <div className="flex items-center justify-between gap-3">
+              <h3 className="text-lg font-semibold">Жалобы</h3>
+              <div className="flex gap-2">
+                <select value={reportFilter} onChange={(e) => setReportFilter(e.target.value as "OPEN" | "RESOLVED" | "REJECTED" | "ALL")} className="rounded-full border border-neutral-700 bg-neutral-950 px-3 py-2 text-xs">
+                  <option value="OPEN">OPEN</option><option value="RESOLVED">RESOLVED</option><option value="REJECTED">REJECTED</option><option value="ALL">ALL</option>
+                </select>
+                <button className="rounded-full border border-neutral-700 px-3 py-2 text-xs hover:border-white" onClick={loadReports}>Обновить</button>
+              </div>
             </div>
+            <div className="mt-3 grid gap-2">
+              {reports.map((r) => (
+                <article key={r.id} className="rounded-xl border border-neutral-800 bg-neutral-950 p-3">
+                  <p className="text-xs text-neutral-400">{r.listing.title} · {r.status} · {formatDate(r.createdAt)} · {r.reporter.username ? `@${r.reporter.username}` : r.reporter.telegramId}</p>
+                  <p className="mt-1 text-sm">{r.reason}</p>
+                  {r.status === "OPEN" ? (
+                    <div className="mt-2 flex gap-2">
+                      <button className="rounded-full border border-emerald-400/70 px-3 py-1 text-xs text-emerald-200" onClick={() => patchReport(r.id, "RESOLVE")}>Resolve</button>
+                      <button className="rounded-full border border-amber-400/70 px-3 py-1 text-xs text-amber-200" onClick={() => patchReport(r.id, "REJECT")}>Reject</button>
+                      <button className="rounded-full border border-red-400/70 px-3 py-1 text-xs text-red-200" onClick={() => patchReport(r.id, "HIDE_LISTING")}>Hide</button>
+                    </div>
+                  ) : null}
+                </article>
+              ))}
+              {!reports.length ? <p className="text-xs text-neutral-500">Жалоб нет.</p> : null}
+            </div>
+          </section>
+        ) : null}
+
+        {canAdmin ? (
+          <section className="rounded-3xl border border-neutral-800 bg-neutral-900 p-6">
+            <div className="flex items-center justify-between gap-3">
+              <h3 className="text-lg font-semibold">Споры / Escrow (SLA {disputeSlaHours}h)</h3>
+              <button className="rounded-full border border-neutral-700 px-3 py-2 text-xs hover:border-white" onClick={loadDisputes}>Обновить</button>
+            </div>
+            <div className="mt-3 grid gap-2">
+              {disputes.map((d) => (
+                <article key={d.id} className="rounded-xl border border-neutral-800 bg-neutral-950 p-3">
+                  <p className="text-xs text-neutral-400">{d.title} · {d.status} · deadline {formatDate(d.slaDeadlineAt)} · overdue {String(d.overdue)} · hold {d.holdAmount ?? 0} · fee {d.feeAmount ?? 0}</p>
+                  <p className="mt-1 text-xs text-neutral-500">buyer {d.buyer?.username ? `@${d.buyer.username}` : d.buyer?.telegramId || "-"} · seller {d.seller?.username ? `@${d.seller.username}` : d.seller?.telegramId || "-"}</p>
+                  {d.disputeCase?.events?.length ? (
+                    <div className="mt-2 rounded-lg border border-neutral-800 bg-neutral-900 p-2 text-xs text-neutral-400">
+                      {d.disputeCase.events.slice(0, 5).map((e) => <p key={e.id}>{e.type} · {formatDate(e.createdAt)} {e.note ? `· ${e.note}` : ""}</p>)}
+                    </div>
+                  ) : null}
+                  <div className="mt-2 flex gap-2">
+                    <button className="rounded-full border border-sky-400/70 px-3 py-1 text-xs text-sky-200" onClick={() => disputeAction(d.id, "SET_IN_REVIEW")}>В работу</button>
+                    <button className="rounded-full border border-emerald-400/70 px-3 py-1 text-xs text-emerald-200" onClick={() => disputeAction(d.id, "RELEASE")}>Release</button>
+                    <button className="rounded-full border border-amber-400/70 px-3 py-1 text-xs text-amber-200" onClick={() => disputeAction(d.id, "REFUND")}>Refund</button>
+                  </div>
+                </article>
+              ))}
+              {!disputes.length ? <p className="text-xs text-neutral-500">Споров нет.</p> : null}
+            </div>
+          </section>
+        ) : null}
+
+        {canAdmin ? (
+          <section className="grid gap-4 md:grid-cols-2">
+            <form onSubmit={(e) => { e.preventDefault(); if (!gameName.trim()) return; createEntity("/api/admin/games", { name: gameName.trim() }); setGameName(""); }} className="rounded-3xl border border-neutral-800 bg-neutral-900 p-5">
+              <h3 className="text-sm font-semibold">Игра</h3>
+              <input value={gameName} onChange={(e) => setGameName(e.target.value)} className="mt-2 w-full rounded-2xl border border-neutral-800 bg-neutral-950 px-3 py-2 text-sm" placeholder="Название" required />
+              <button className="mt-3 rounded-full bg-white px-4 py-2 text-xs font-semibold text-black">Добавить</button>
+            </form>
+            <form onSubmit={(e) => { e.preventDefault(); if (!serverName.trim() || !serverGameId) return; createEntity("/api/admin/servers", { name: serverName.trim(), gameId: serverGameId }); setServerName(""); }} className="rounded-3xl border border-neutral-800 bg-neutral-900 p-5">
+              <h3 className="text-sm font-semibold">Сервер</h3>
+              <select value={serverGameId} onChange={(e) => setServerGameId(e.target.value)} className="mt-2 w-full rounded-2xl border border-neutral-800 bg-neutral-950 px-3 py-2 text-sm" required>
+                <option value="">Игра</option>{catalog.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
+              </select>
+              <input value={serverName} onChange={(e) => setServerName(e.target.value)} className="mt-2 w-full rounded-2xl border border-neutral-800 bg-neutral-950 px-3 py-2 text-sm" placeholder="Название" required />
+              <button className="mt-3 rounded-full bg-white px-4 py-2 text-xs font-semibold text-black">Добавить</button>
+            </form>
+            <form onSubmit={(e) => { e.preventDefault(); if (!categoryName.trim() || !categoryGameId) return; createEntity("/api/admin/categories", { name: categoryName.trim(), gameId: categoryGameId, parentId: null }); setCategoryName(""); }} className="rounded-3xl border border-neutral-800 bg-neutral-900 p-5">
+              <h3 className="text-sm font-semibold">Категория</h3>
+              <select value={categoryGameId} onChange={(e) => setCategoryGameId(e.target.value)} className="mt-2 w-full rounded-2xl border border-neutral-800 bg-neutral-950 px-3 py-2 text-sm" required>
+                <option value="">Игра</option>{catalog.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
+              </select>
+              <input value={categoryName} onChange={(e) => setCategoryName(e.target.value)} className="mt-2 w-full rounded-2xl border border-neutral-800 bg-neutral-950 px-3 py-2 text-sm" placeholder="Название" required />
+              <p className="mt-1 text-xs text-neutral-500">Категории текущей игры: {(selectedCategoryGame?.categories || []).map((c) => c.name).slice(0, 5).join(", ") || "-"}</p>
+              <button className="mt-3 rounded-full bg-white px-4 py-2 text-xs font-semibold text-black">Добавить</button>
+            </form>
+            <form onSubmit={(e) => { e.preventDefault(); if (!tagName.trim() || !tagGameId) return; createEntity("/api/admin/tags", { name: tagName.trim(), gameId: tagGameId }); setTagName(""); }} className="rounded-3xl border border-neutral-800 bg-neutral-900 p-5">
+              <h3 className="text-sm font-semibold">Тег</h3>
+              <select value={tagGameId} onChange={(e) => setTagGameId(e.target.value)} className="mt-2 w-full rounded-2xl border border-neutral-800 bg-neutral-950 px-3 py-2 text-sm" required>
+                <option value="">Игра</option>{catalog.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
+              </select>
+              <input value={tagName} onChange={(e) => setTagName(e.target.value)} className="mt-2 w-full rounded-2xl border border-neutral-800 bg-neutral-950 px-3 py-2 text-sm" placeholder="Название" required />
+              <button className="mt-3 rounded-full bg-white px-4 py-2 text-xs font-semibold text-black">Добавить</button>
+            </form>
           </section>
         ) : null}
       </div>

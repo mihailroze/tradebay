@@ -9,6 +9,7 @@ Telegram Web App marketplace for game-item listings with Trade Coin balance, esc
 - Wallet top-up in Telegram Stars (`XTR`) with idempotency
 - Escrow flow: reserve -> confirm -> release to seller
 - Dispute flow: buyer/seller can open dispute, admin resolves (release/refund)
+- Dispute SLA tracking, in-review status, and dispute action log
 - Moderation: user reports, auto-hide threshold, admin report queue
 - Health endpoints and structured error reporting
 
@@ -78,11 +79,25 @@ Call endpoint from Railway cron / GitHub Actions every 5-10 minutes:
 
 - `POST https://<YOUR_DOMAIN>/api/internal/escrow/reconcile`
 - Header: `x-internal-cron-secret: <INTERNAL_CRON_SECRET>`
+- Configure stale threshold with `ESCROW_RECONCILE_MAX_DELAY_MINUTES`
+
+Admin manual/status endpoint:
+
+- `GET /api/admin/ops/reconcile`
+- `POST /api/admin/ops/reconcile`
 
 ## Health checks
 
 - Liveness: `GET /api/health`
 - Readiness (DB): `GET /api/ready`
+
+## Finance controls
+
+- Admin finance summary: `GET /api/admin/finance/summary?days=30`
+- Includes supply reconciliation:
+  - `expectedSupplyFromTopups`
+  - `actualSupply = sum(wallet.balance + wallet.lockedBalance)`
+  - `supplyDiff`
 
 ## Staging
 

@@ -6,12 +6,14 @@ import { checkRateLimit } from "@/lib/rate-limit";
 import { getEnvInt } from "@/lib/env";
 import { sendOpsAlert } from "@/lib/alerts";
 import { getRequestContext, reportServerError } from "@/lib/observability";
+import { notifyDisputeOpened } from "@/lib/notifications";
 
 const schema = z.object({
   reason: z.string().trim().min(4).max(500),
 });
 
 const DISPUTE_RATE_LIMIT_PER_MINUTE = getEnvInt("DISPUTE_RATE_LIMIT_PER_MINUTE", 10);
+const DISPUTE_SLA_HOURS = getEnvInt("DISPUTE_SLA_HOURS", 24);
 
 export async function POST(req: Request, context: { params: Promise<{ id: string }> }) {
   const requestContext = getRequestContext(req, "/api/listings/[id]/dispute");
@@ -73,19 +75,69 @@ export async function POST(req: Request, context: { params: Promise<{ id: string
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
-    const updated = await prisma.listing.update({
-      where: { id: listing.id },
-      data: {
-        status: "DISPUTED",
-        disputedAt: new Date(),
-        disputeReason: parsed.data.reason,
-      },
+    const now = new Date();
+    const openedAt = listing.disputedAt ?? listing.reservedAt ?? now;
+    const slaDeadlineAt = new Date(openedAt.getTime() + DISPUTE_SLA_HOURS * 60 * 60 * 1000);
+
+    const updated = await prisma.$transaction(async (db) => {
+      const updatedListing = await db.listing.update({
+        where: { id: listing.id },
+        data: {
+          status: "DISPUTED",
+          disputedAt: now,
+          disputeReason: parsed.data.reason,
+        },
+      });
+
+      const disputeCase = await db.disputeCase.upsert({
+        where: { listingId: listing.id },
+        update: {
+          status: "OPEN",
+          openedById: user.id,
+          openedAt,
+          firstResponseAt: null,
+          resolvedAt: null,
+          assignedAdminId: null,
+          resolutionTemplate: null,
+          resolutionNote: null,
+          slaDeadlineAt,
+        },
+        create: {
+          listingId: listing.id,
+          status: "OPEN",
+          openedById: user.id,
+          openedAt,
+          slaDeadlineAt,
+        },
+      });
+
+      await db.disputeCaseEvent.create({
+        data: {
+          disputeCaseId: disputeCase.id,
+          actorUserId: user.id,
+          type: "OPENED",
+          note: parsed.data.reason,
+          meta: {
+            openedByTelegramId: String(tgUser.id),
+          },
+        },
+      });
+
+      return updatedListing;
     });
 
     await sendOpsAlert(
       "Deal marked as disputed",
       `listing=${listing.id}\nreporter=${user.telegramId}\nreason=${parsed.data.reason}`,
     );
+    await notifyDisputeOpened({
+      listingId: listing.id,
+      listingTitle: listing.title,
+      buyerTelegramId: listing.buyer?.telegramId ?? null,
+      sellerTelegramId: listing.seller?.telegramId ?? null,
+      reason: parsed.data.reason,
+      slaHours: DISPUTE_SLA_HOURS,
+    });
 
     return NextResponse.json({ ok: true, listing: updated });
   } catch (error) {
@@ -96,4 +148,3 @@ export async function POST(req: Request, context: { params: Promise<{ id: string
     );
   }
 }
-
