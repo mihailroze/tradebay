@@ -15,6 +15,7 @@ enum ListingType {
 enum ListingStatus {
   ACTIVE
   RESERVED
+  DISPUTED
   SOLD
   HIDDEN
 }
@@ -33,6 +34,12 @@ enum WalletTransactionStatus {
   FAILED
 }
 
+enum ReportStatus {
+  OPEN
+  RESOLVED
+  REJECTED
+}
+
 model User {
   id          String   @id @default(cuid())
   telegramId  String   @unique
@@ -45,6 +52,8 @@ model User {
   listings  Listing[] @relation("ListingSeller")
   purchases Listing[] @relation("ListingBuyer")
   favorites ListingFavorite[]
+  reportsCreated ListingReport[] @relation("ListingReportReporter")
+  reportsResolved ListingReport[] @relation("ListingReportResolver")
   wallet    Wallet?
 }
 
@@ -118,8 +127,12 @@ model Listing {
   sellerId     String
   buyerId      String?
   reservedAt   DateTime?
+  reservationExpiresAt DateTime?
   holdAmount   Int?
   feeAmount    Int?
+  disputedAt   DateTime?
+  disputeReason String?
+  reportCount  Int           @default(0)
   createdAt    DateTime      @default(now())
   updatedAt    DateTime      @updatedAt
 
@@ -132,10 +145,12 @@ model Listing {
   tags      ListingTag[]
   favorites ListingFavorite[]
   walletTransactions WalletTransaction[]
+  reports   ListingReport[]
 
   @@index([gameId, serverId, categoryId, status])
   @@index([title])
   @@index([buyerId, status])
+  @@index([status, reservationExpiresAt])
 }
 
 model Wallet {
@@ -159,6 +174,9 @@ model WalletTransaction {
   currency  String                  @default("TC")
   listingId String?
   externalId String?                @unique
+  providerRef String?               @unique
+  idempotencyKey String?            @unique
+  errorMessage String?
   payload   String?
   createdAt DateTime                @default(now())
   updatedAt DateTime                @updatedAt
@@ -169,6 +187,27 @@ model WalletTransaction {
   @@index([listingId])
   @@index([walletId, createdAt])
   @@index([payload])
+}
+
+model ListingReport {
+  id           String       @id @default(cuid())
+  listingId    String
+  reporterId   String
+  reason       String
+  status       ReportStatus @default(OPEN)
+  adminNote    String?
+  resolvedById String?
+  resolvedAt   DateTime?
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  listing    Listing @relation(fields: [listingId], references: [id], onDelete: Cascade)
+  reporter   User    @relation("ListingReportReporter", fields: [reporterId], references: [id], onDelete: Cascade)
+  resolvedBy User?   @relation("ListingReportResolver", fields: [resolvedById], references: [id], onDelete: SetNull)
+
+  @@unique([listingId, reporterId])
+  @@index([status, createdAt])
+  @@index([listingId, status])
 }
 
 model ListingFavorite {

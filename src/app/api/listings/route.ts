@@ -5,10 +5,16 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { getAuthTelegramUser } from "@/lib/auth";
 import { getListingPricing } from "@/lib/pricing";
+import { getEnvInt } from "@/lib/env";
+import { checkRateLimit } from "@/lib/rate-limit";
+import { releaseExpiredEscrows } from "@/lib/escrow";
+import { getRequestContext, reportServerError } from "@/lib/observability";
 
 const MAX_IMAGES = 5;
 const MAX_IMAGE_SIZE = 2 * 1024 * 1024;
 const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp"];
+const LISTING_POST_LIMIT_10M = getEnvInt("LISTING_POST_LIMIT_10M", 3);
+const LISTING_RATE_LIMIT_PER_MINUTE = getEnvInt("LISTING_RATE_LIMIT_PER_MINUTE", 8);
 
 function parseRubPrice(price: Prisma.Decimal): number | null {
   const raw = price.toString();
@@ -33,6 +39,7 @@ const createSchema = z.object({
 });
 
 export async function GET(req: Request) {
+  await releaseExpiredEscrows(10).catch(() => []);
   const { searchParams } = new URL(req.url);
   const search = searchParams.get("search") || undefined;
   const gameId = searchParams.get("gameId") || undefined;
@@ -103,6 +110,7 @@ export async function GET(req: Request) {
 
   const tgUser = await getAuthTelegramUser();
   let favoriteIds = new Set<string>();
+  let reportedIds = new Set<string>();
   if (tgUser && listings.length) {
     const user = await prisma.user.findUnique({
       where: { telegramId: String(tgUser.id) },
@@ -117,6 +125,15 @@ export async function GET(req: Request) {
         select: { listingId: true },
       });
       favoriteIds = new Set(favorites.map((fav) => fav.listingId));
+
+      const reports = await prisma.listingReport.findMany({
+        where: {
+          reporterId: user.id,
+          listingId: { in: listings.map((listing) => listing.id) },
+        },
+        select: { listingId: true },
+      });
+      reportedIds = new Set(reports.map((report) => report.listingId));
     }
   }
 
@@ -131,6 +148,7 @@ export async function GET(req: Request) {
     return {
       ...listing,
       isFavorite: favoriteIds.has(listing.id),
+      isReported: reportedIds.has(listing.id),
       priceStars: pricing?.totalStars ?? null,
       feeStars: pricing?.feeStars ?? null,
       feePercent: pricing?.feePercent ?? null,
@@ -141,10 +159,24 @@ export async function GET(req: Request) {
 }
 
 export async function POST(req: Request) {
+  const requestContext = getRequestContext(req, "/api/listings");
+
   try {
     const tgUser = await getAuthTelegramUser();
     if (!tgUser) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const rate = checkRateLimit({
+      key: `rate:listings:create:${tgUser.id}`,
+      limit: LISTING_RATE_LIMIT_PER_MINUTE,
+      windowMs: 60_000,
+    });
+    if (!rate.allowed) {
+      return NextResponse.json(
+        { error: "Too many requests", retryAfterMs: rate.retryAfterMs },
+        { status: 429 },
+      );
     }
 
     const contentType = req.headers.get("content-type") || "";
@@ -190,6 +222,52 @@ export async function POST(req: Request) {
       },
     });
 
+    const now = new Date();
+    const recentWindow = new Date(now.getTime() - 10 * 60 * 1000);
+    const recentPosts = await prisma.listing.count({
+      where: {
+        sellerId: user.id,
+        createdAt: { gte: recentWindow },
+      },
+    });
+    if (recentPosts >= LISTING_POST_LIMIT_10M) {
+      return NextResponse.json(
+        { error: "Too many listings in a short period. Please wait a few minutes." },
+        { status: 429 },
+      );
+    }
+
+    const duplicateWindow = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+    const recentUserListings = await prisma.listing.findMany({
+      where: {
+        sellerId: user.id,
+        createdAt: { gte: duplicateWindow },
+      },
+      select: {
+        id: true,
+        title: true,
+        description: true,
+      },
+      take: 30,
+      orderBy: { createdAt: "desc" },
+    });
+
+    const normalizeText = (value: string | null | undefined) =>
+      (value || "").trim().toLowerCase().replace(/\s+/g, " ");
+    const candidateSignature = `${normalizeText(parsedPayload.title)}|${normalizeText(
+      parsedPayload.description || "",
+    )}`;
+    const hasDuplicate = recentUserListings.some((item) => {
+      const signature = `${normalizeText(item.title)}|${normalizeText(item.description || "")}`;
+      return signature === candidateSignature;
+    });
+    if (hasDuplicate) {
+      return NextResponse.json(
+        { error: "Duplicate listing detected. Please edit title/description before posting." },
+        { status: 400 },
+      );
+    }
+
     let imageCreates = [];
     try {
       imageCreates = await buildImages(images);
@@ -225,8 +303,11 @@ export async function POST(req: Request) {
 
     return NextResponse.json({ listing });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Server error";
-    return NextResponse.json({ error: message }, { status: 500 });
+    await reportServerError(error, requestContext);
+    return NextResponse.json(
+      { error: "Server error", requestId: requestContext.requestId },
+      { status: 500 },
+    );
   }
 }
 

@@ -21,7 +21,7 @@ type Listing = {
   currency?: string | null;
   tradeNote?: string | null;
   contactAlt?: string | null;
-  status?: "ACTIVE" | "RESERVED" | "SOLD" | "HIDDEN";
+  status?: "ACTIVE" | "RESERVED" | "DISPUTED" | "SOLD" | "HIDDEN";
   priceStars?: number | null;
   feeStars?: number | null;
   feePercent?: number | null;
@@ -33,6 +33,7 @@ type Listing = {
   category?: { id: string; name: string } | null;
   seller?: { username?: string | null; lastSeenAt?: string | null };
   isFavorite?: boolean;
+  isReported?: boolean;
 };
 
 type CatalogResponse = { games: Game[] };
@@ -106,6 +107,8 @@ function formatStatus(status?: Listing["status"]) {
   switch (status) {
     case "RESERVED":
       return "Ожидает подтверждения";
+    case "DISPUTED":
+      return "Спор";
     case "SOLD":
       return "Продан";
     case "HIDDEN":
@@ -288,6 +291,41 @@ export default function Market() {
     setListings((prev) =>
       prev.map((item) => (item.id === listingId ? { ...item, isFavorite: next } : item)),
     );
+  };
+
+  const reportListing = async (listing: Listing) => {
+    if (!initData && !hasAuth) {
+      setStatus("Войдите через Telegram, чтобы отправлять жалобы.");
+      return;
+    }
+    if (listing.isReported) {
+      setStatus("Вы уже отправили жалобу на этот лот.");
+      return;
+    }
+    const reason = window.prompt("Причина жалобы (минимум 4 символа):", "Подозрительный лот");
+    if (!reason) return;
+
+    const res = await fetch(`/api/listings/${listing.id}/report`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(initData ? { "x-telegram-init-data": initData } : {}),
+      },
+      body: JSON.stringify({ reason }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      setStatus(data.error || "Не удалось отправить жалобу");
+      return;
+    }
+
+    setStatus("Жалоба отправлена");
+    setListings((prev) =>
+      prev.map((item) => (item.id === listing.id ? { ...item, isReported: true } : item)),
+    );
+    if (sharedListing?.id === listing.id) {
+      setSharedListing({ ...sharedListing, isReported: true });
+    }
   };
 
   const buyListing = async (listingId: string) => {
@@ -552,13 +590,24 @@ export default function Market() {
                     }`}
                     onClick={() => toggleFavorite(sharedListing.id, !sharedListing.isFavorite)}
                   >
-                    ?
+                    {sharedListing.isFavorite ? "★" : "☆"}
                   </button>
                   <button
                     className="rounded-full border border-neutral-700 px-3 py-1 text-xs text-neutral-300 hover:border-white"
                     onClick={() => shareListing(sharedListing)}
                   >
                     Поделиться
+                  </button>
+                  <button
+                    className={`rounded-full border px-3 py-1 text-xs ${
+                      sharedListing.isReported
+                        ? "border-amber-500/80 text-amber-200"
+                        : "border-neutral-700 text-neutral-300 hover:border-white"
+                    }`}
+                    onClick={() => reportListing(sharedListing)}
+                    disabled={Boolean(sharedListing.isReported)}
+                  >
+                    {sharedListing.isReported ? "Жалоба отправлена" : "Пожаловаться"}
                   </button>
                   <span className="rounded-full border border-neutral-700 px-3 py-1 text-xs uppercase tracking-wider">
                     {sharedListing.type === "SALE" ? "Продажа" : "Обмен"}
@@ -650,13 +699,24 @@ export default function Market() {
                     }`}
                     onClick={() => toggleFavorite(listing.id, !listing.isFavorite)}
                   >
-                    ?
+                    {listing.isFavorite ? "★" : "☆"}
                   </button>
                   <button
                     className="rounded-full border border-neutral-700 px-3 py-1 text-xs text-neutral-300 hover:border-white"
                     onClick={() => shareListing(listing)}
                   >
                     Поделиться
+                  </button>
+                  <button
+                    className={`rounded-full border px-3 py-1 text-xs ${
+                      listing.isReported
+                        ? "border-amber-500/80 text-amber-200"
+                        : "border-neutral-700 text-neutral-300 hover:border-white"
+                    }`}
+                    onClick={() => reportListing(listing)}
+                    disabled={Boolean(listing.isReported)}
+                  >
+                    {listing.isReported ? "Жалоба отправлена" : "Пожаловаться"}
                   </button>
                   <span className="rounded-full border border-neutral-700 px-3 py-1 text-xs uppercase tracking-wider">
                     {listing.type === "SALE" ? "Продажа" : "Обмен"}

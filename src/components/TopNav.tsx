@@ -14,6 +14,11 @@ const baseLinks = [
   { href: "/wallet", label: "Кошелек" },
 ];
 
+const legalLinks = [
+  { href: "/terms", label: "Условия" },
+  { href: "/privacy", label: "Конфиденциальность" },
+];
+
 function getInitData(): string {
   if (typeof window === "undefined") return "";
   const tg = (window as unknown as { Telegram?: { WebApp?: { initData?: string; ready?: () => void } } }).Telegram;
@@ -52,6 +57,7 @@ function readInitDataFromUrl(): string {
 
 export default function TopNav() {
   const pathname = usePathname();
+  const appEnv = (process.env.NEXT_PUBLIC_APP_ENV || "production").trim().toLowerCase();
   const [isAdmin, setIsAdmin] = useState(false);
   const [isAuthed, setIsAuthed] = useState(false);
   const [authSource, setAuthSource] = useState<"webapp" | "session" | "">("");
@@ -101,7 +107,25 @@ export default function TopNav() {
     <nav className="flex flex-wrap items-center justify-between gap-3 rounded-3xl border border-neutral-800 bg-neutral-900 px-5 py-3">
       <div>
         <p className="text-xs uppercase tracking-[0.3em] text-neutral-400">TradeBay</p>
-        <h1 className="text-lg font-semibold tracking-tight">Игровой рынок</h1>
+        <div className="flex items-center gap-2">
+          <h1 className="text-lg font-semibold tracking-tight">Игровой рынок</h1>
+          {appEnv !== "production" ? (
+            <span className="rounded-full border border-amber-400/70 px-2 py-0.5 text-[10px] uppercase tracking-[0.18em] text-amber-200">
+              {appEnv}
+            </span>
+          ) : null}
+        </div>
+        <div className="mt-1 flex flex-wrap gap-2">
+          {legalLinks.map((link) => (
+            <Link
+              key={link.href}
+              href={link.href}
+              className="rounded-full border border-neutral-800 px-2 py-1 text-[11px] text-neutral-500 hover:border-neutral-500 hover:text-neutral-300"
+            >
+              {link.label}
+            </Link>
+          ))}
+        </div>
       </div>
       <div className="flex flex-wrap items-center gap-3">
         {links.map((link) => {

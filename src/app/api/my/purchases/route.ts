@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { getAuthTelegramUser } from "@/lib/auth";
 import { getListingPricing } from "@/lib/pricing";
 import { Prisma } from "@prisma/client";
+import { releaseExpiredEscrows } from "@/lib/escrow";
 
 function parseRubPrice(price: Prisma.Decimal): number | null {
   const raw = price.toString();
@@ -13,6 +14,7 @@ function parseRubPrice(price: Prisma.Decimal): number | null {
 }
 
 export async function GET() {
+  await releaseExpiredEscrows(25).catch(() => []);
   const tgUser = await getAuthTelegramUser();
   if (!tgUser) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -36,7 +38,7 @@ export async function GET() {
   const listings = await prisma.listing.findMany({
     where: {
       buyerId: user.id,
-      status: { in: ["RESERVED", "SOLD"] },
+      status: { in: ["RESERVED", "DISPUTED", "SOLD"] },
     },
     orderBy: [{ reservedAt: "desc" }, { createdAt: "desc" }],
     include: {

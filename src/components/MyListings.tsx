@@ -14,7 +14,7 @@ type Listing = {
   priceStars?: number | null;
   feeStars?: number | null;
   feePercent?: number | null;
-  status: "ACTIVE" | "RESERVED" | "SOLD" | "HIDDEN";
+  status: "ACTIVE" | "RESERVED" | "DISPUTED" | "SOLD" | "HIDDEN";
   images: { id: string }[];
   tags: { tag: { id: string; name: string } }[];
   game?: { id: string; name: string };
@@ -79,6 +79,8 @@ function formatStatus(status: Listing["status"]) {
   switch (status) {
     case "RESERVED":
       return "Ожидает подтверждения";
+    case "DISPUTED":
+      return "Спор";
     case "SOLD":
       return "Продан";
     case "HIDDEN":

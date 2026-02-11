@@ -52,12 +52,23 @@ export async function GET(_req: Request, context: { params: Promise<{ id: string
   }
 
   let isFavorite = false;
+  let isReported = false;
   if (userRecord) {
       const favorite = await prisma.listingFavorite.findUnique({
         where: { userId_listingId: { userId: userRecord.id, listingId: listing.id } },
         select: { listingId: true },
       });
       isFavorite = Boolean(favorite);
+      const report = await prisma.listingReport.findUnique({
+        where: {
+          listingId_reporterId: {
+            listingId: listing.id,
+            reporterId: userRecord.id,
+          },
+        },
+        select: { id: true },
+      });
+      isReported = Boolean(report);
   }
 
   let pricing: ReturnType<typeof getListingPricing> | null = null;
@@ -81,6 +92,7 @@ export async function GET(_req: Request, context: { params: Promise<{ id: string
       ...listing,
       seller,
       isFavorite,
+      isReported,
       isBuyer,
       priceStars: pricing?.totalStars ?? null,
       feeStars: pricing?.feeStars ?? null,

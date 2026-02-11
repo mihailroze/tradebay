@@ -14,7 +14,7 @@ type Listing = {
   priceStars?: number | null;
   feeStars?: number | null;
   feePercent?: number | null;
-  status: "RESERVED" | "SOLD";
+  status: "RESERVED" | "DISPUTED" | "SOLD";
   images: { id: string }[];
   tags: { tag: { id: string; name: string } }[];
   game?: { id: string; name: string };
@@ -27,7 +27,8 @@ type ListingsResponse = { listings: Listing[] };
 
 function getInitData(): string {
   if (typeof window === "undefined") return "";
-  const tg = (window as unknown as { Telegram?: { WebApp?: { initData?: string; ready?: () => void } } }).Telegram;
+  const tg = (window as unknown as { Telegram?: { WebApp?: { initData?: string; ready?: () => void } } })
+    .Telegram;
   tg?.WebApp?.ready?.();
   const fromTelegram = tg?.WebApp?.initData || "";
   const fromUrl = readInitDataFromUrl();
@@ -81,14 +82,13 @@ function formatPrice(listing: Listing) {
     return `Обмен: ${listing.tradeNote ?? "-"}`;
   }
   const stars = listing.priceStars ?? null;
-  if (stars === null) {
-    return "Цена: -";
-  }
+  if (stars === null) return "Цена: -";
   return `Цена: ${stars} TC`;
 }
 
 function formatStatus(status: Listing["status"]) {
   if (status === "RESERVED") return "Ожидает подтверждения";
+  if (status === "DISPUTED") return "Спор";
   if (status === "SOLD") return "Сделка закрыта";
   return status;
 }
@@ -161,6 +161,34 @@ export default function MyPurchases() {
     }
   };
 
+  const openDispute = async (listingId: string) => {
+    if (!initData && !hasAuth) {
+      setStatus("Войдите через Telegram, чтобы открыть спор.");
+      return;
+    }
+    const reason = window.prompt("Причина спора:", "Продавец не выполнил условия");
+    if (!reason) return;
+
+    setStatus("Открываем спор...");
+    const res = await fetch(`/api/listings/${listingId}/dispute`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(initData ? { "x-telegram-init-data": initData } : {}),
+      },
+      body: JSON.stringify({ reason }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      setStatus(data.error || "Не удалось открыть спор");
+      return;
+    }
+    setStatus("Спор открыт, ожидайте решения админа.");
+    setListings((prev) =>
+      prev.map((item) => (item.id === listingId ? { ...item, status: "DISPUTED" } : item)),
+    );
+  };
+
   return (
     <div className="min-h-screen bg-neutral-950 text-neutral-100">
       <div className="mx-auto flex w-full max-w-6xl flex-col gap-10 px-5 py-10">
@@ -231,12 +259,25 @@ export default function MyPurchases() {
                       </button>
                     ) : null}
                     {listing.status === "RESERVED" ? (
-                      <button
-                        className="rounded-full border border-emerald-400/70 px-3 py-1 text-xs text-emerald-200 hover:border-emerald-300"
-                        onClick={() => confirmPurchase(listing.id)}
-                      >
-                        Подтвердить сделку
-                      </button>
+                      <>
+                        <button
+                          className="rounded-full border border-emerald-400/70 px-3 py-1 text-xs text-emerald-200 hover:border-emerald-300"
+                          onClick={() => confirmPurchase(listing.id)}
+                        >
+                          Подтвердить сделку
+                        </button>
+                        <button
+                          className="rounded-full border border-amber-400/70 px-3 py-1 text-xs text-amber-200 hover:border-amber-300"
+                          onClick={() => openDispute(listing.id)}
+                        >
+                          Открыть спор
+                        </button>
+                      </>
+                    ) : null}
+                    {listing.status === "DISPUTED" ? (
+                      <span className="rounded-full border border-amber-500/70 px-3 py-1 text-xs text-amber-200">
+                        Спор на рассмотрении
+                      </span>
                     ) : null}
                   </div>
                 </div>
@@ -248,3 +289,4 @@ export default function MyPurchases() {
     </div>
   );
 }
+
