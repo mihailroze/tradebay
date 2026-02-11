@@ -26,6 +26,7 @@ type Listing = {
   feeStars?: number | null;
   feePercent?: number | null;
   isBuyer?: boolean;
+  isOwner?: boolean;
   images: { id: string }[];
   tags: { tag: { id: string; name: string } }[];
   game?: { id: string; name: string };
@@ -640,14 +641,14 @@ export default function Market() {
                   sharedListing.status === "ACTIVE" ? (
                     <button
                       className={`rounded-full border px-3 py-1 text-xs ${
-                        canAfford(sharedListing.priceStars)
+                        !sharedListing.isOwner && canAfford(sharedListing.priceStars)
                           ? "border-emerald-400/70 text-emerald-200 hover:border-emerald-300"
                           : "border-neutral-700 text-neutral-500"
                       }`}
                       onClick={() => buyListing(sharedListing.id)}
-                      disabled={!canAfford(sharedListing.priceStars)}
+                      disabled={Boolean(sharedListing.isOwner) || !canAfford(sharedListing.priceStars)}
                     >
-                      Купить за {sharedListing.priceStars ?? "-"} TC
+                      {sharedListing.isOwner ? "Ваш лот" : `Купить за ${sharedListing.priceStars ?? "-"} TC`}
                     </button>
                   ) : null}
                   {sharedListing.status === "RESERVED" && sharedListing.isBuyer ? (
@@ -749,14 +750,14 @@ export default function Market() {
                   listing.status === "ACTIVE" ? (
                     <button
                       className={`rounded-full border px-3 py-1 text-xs ${
-                        canAfford(listing.priceStars)
+                        !listing.isOwner && canAfford(listing.priceStars)
                           ? "border-emerald-400/70 text-emerald-200 hover:border-emerald-300"
                           : "border-neutral-700 text-neutral-500"
                       }`}
                       onClick={() => buyListing(listing.id)}
-                      disabled={!canAfford(listing.priceStars)}
+                      disabled={Boolean(listing.isOwner) || !canAfford(listing.priceStars)}
                     >
-                      Купить за {listing.priceStars ?? "-"} TC
+                      {listing.isOwner ? "Ваш лот" : `Купить за ${listing.priceStars ?? "-"} TC`}
                     </button>
                   ) : null}
                   {listing.status === "RESERVED" && listing.isBuyer ? (

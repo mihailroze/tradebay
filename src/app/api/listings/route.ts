@@ -111,15 +111,16 @@ export async function GET(req: Request) {
   const tgUser = await getAuthTelegramUser();
   let favoriteIds = new Set<string>();
   let reportedIds = new Set<string>();
+  let userRecord: { id: string } | null = null;
   if (tgUser && listings.length) {
-    const user = await prisma.user.findUnique({
+    userRecord = await prisma.user.findUnique({
       where: { telegramId: String(tgUser.id) },
       select: { id: true },
     });
-    if (user) {
+    if (userRecord) {
       const favorites = await prisma.listingFavorite.findMany({
         where: {
-          userId: user.id,
+          userId: userRecord.id,
           listingId: { in: listings.map((listing) => listing.id) },
         },
         select: { listingId: true },
@@ -128,7 +129,7 @@ export async function GET(req: Request) {
 
       const reports = await prisma.listingReport.findMany({
         where: {
-          reporterId: user.id,
+          reporterId: userRecord.id,
           listingId: { in: listings.map((listing) => listing.id) },
         },
         select: { listingId: true },
@@ -149,6 +150,7 @@ export async function GET(req: Request) {
       ...listing,
       isFavorite: favoriteIds.has(listing.id),
       isReported: reportedIds.has(listing.id),
+      isOwner: Boolean(userRecord && listing.sellerId === userRecord.id),
       priceStars: pricing?.totalStars ?? null,
       feeStars: pricing?.feeStars ?? null,
       feePercent: pricing?.feePercent ?? null,

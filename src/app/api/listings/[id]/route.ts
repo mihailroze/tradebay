@@ -94,6 +94,7 @@ export async function GET(_req: Request, context: { params: Promise<{ id: string
       isFavorite,
       isReported,
       isBuyer,
+      isOwner,
       priceStars: pricing?.totalStars ?? null,
       feeStars: pricing?.feeStars ?? null,
       feePercent: pricing?.feePercent ?? null,
