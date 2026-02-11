@@ -808,6 +808,8 @@ function ContactButton({ listing }: { listing: Listing }) {
   const rawContact = username ? `https://t.me/${username}` : listing.contactAlt || "";
   const contact = normalizeContact(rawContact);
   const online = isSellerOnline(listing.seller?.lastSeenAt || null);
+  const isCurrencyListing = listing.type === "SALE" && Boolean((listing.currency || "").trim());
+  const canContactSeller = !isCurrencyListing;
   return (
     <div className="flex items-center gap-3">
       <span className="flex items-center gap-2 text-xs text-neutral-400">
@@ -815,8 +817,15 @@ function ContactButton({ listing }: { listing: Listing }) {
         {online ? "Онлайн" : "Оффлайн"}
       </span>
       <button
-        className="rounded-full bg-white px-4 py-2 text-xs font-semibold text-black"
+        className={`rounded-full px-4 py-2 text-xs font-semibold ${
+          canContactSeller
+            ? "bg-white text-black"
+            : "cursor-not-allowed border border-neutral-700 bg-neutral-900 text-neutral-500"
+        }`}
+        disabled={!canContactSeller}
+        title={canContactSeller ? undefined : "Для денежных лотов общение доступно только после покупки"}
         onClick={() => {
+          if (!canContactSeller) return;
           if (contact) {
             window.open(contact, "_blank");
           } else {
@@ -824,7 +833,7 @@ function ContactButton({ listing }: { listing: Listing }) {
           }
         }}
       >
-        Написать в TG
+        {canContactSeller ? "Написать в TG" : "Чат после покупки"}
       </button>
     </div>
   );
